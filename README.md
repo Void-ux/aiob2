@@ -23,7 +23,7 @@ __**NOTE:**__ This API wrapper is by no means *complete* and has many endpoints 
 
 aiob2 is compatible with Python 3.8.10+ (this is an estimate). To install aiob2, run the following command in your (virtual) environment.
 ```
-pip install https://github.com/Void-ux/aiob2.git
+pip install git+https://github.com/Void-ux/aiob2.git
 ```
 
 # Usage
