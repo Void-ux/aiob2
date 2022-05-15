@@ -303,4 +303,4 @@ async def delete_file(
     if r.get('status') is not None:
         raise codes.get(B2Error(r['status'], r['code']))(r['message'])
 
-    return r
+    return DeletedFile.from_response(r)  # type: ignore
