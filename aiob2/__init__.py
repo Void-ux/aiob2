@@ -1,5 +1,4 @@
 from .exceptions import *
-from .bucket import *
 
 __title__ = 'aiob2'
 __author__ = 'Dan'
