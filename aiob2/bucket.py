@@ -3,7 +3,7 @@ import hashlib
 import datetime
 
 from typing import NamedTuple
-from aiohttp import ClientSession, ClientResponse
+from aiohttp import ClientSession
 from .exceptions import codes, B2Error
 
 
@@ -143,6 +143,25 @@ class DeletedFile(NamedTuple):
         return f'<DeletedFile file_name={self.file_name} file_id={self.file_id}>'
 
 
+async def http(
+        url: str,
+        *,
+        session: ClientSession,
+        method: str,
+        **kwargs) -> dict:
+    if method == 'GET':
+        async with session.get(url, **kwargs) as r:
+            r = await r.json()
+    else:
+        async with session.post(url, **kwargs) as r:
+            r = await r.json()
+
+    if r.get('status') is not None:
+        raise codes.get(B2Error(r['status'], r['code']))(r['message'])
+
+    return r
+
+
 async def authorise_account(
         conn_info: B2ConnectionInfo,
         session: ClientSession
@@ -168,11 +187,12 @@ async def authorise_account(
     basic_auth_string = 'Basic ' + base64.b64encode(id_and_key).decode()
     headers = {'Authorization': basic_auth_string}
 
-    async with session.get("https://api.backblazeb2.com/b2api/v2/b2_authorize_account", headers=headers) as r:
-        r = await r.json()
-
-    if r.get('status') is not None:
-        raise codes.get(B2Error(r['status'], r['code']))(r['message'])
+    r = await http(
+        'https://api.backblazeb2.com/b2api/v2/b2_authorize_account',
+        session=session,
+        method='GET',
+        headers=headers
+    )
 
     return AuthorisedAccount.from_response(r)
 
@@ -202,14 +222,14 @@ async def get_upload_url(
         to be used as the authorisation for API calls to that URL.
     """
     account = await authorise_account(conn_info, session)
-    headers = {'Authorization': account.authorisation_token}
-    async with session.get(f"{account.api_url}/b2api/v2/b2_get_upload_url",
-                           params={'bucketId': bucket_id},
-                           headers=headers) as r:
-        r = await r.json()
 
-    if r.get('status') is not None:
-        raise codes.get(B2Error(r['status'], r['code']))(r['message'])
+    r = await http(
+        f'{account.api_url}/b2api/v2/b2_get_upload_url',
+        session=session,
+        method='GET',
+        headers={'Authorization': account.authorisation_token},
+        params={'bucketId': bucket_id}
+    )
 
     return UploadUrl.from_response(r)
 
@@ -256,11 +276,7 @@ async def upload_file(
         'Content-Type': content_type,
         'X-Bz-Content-Sha1': hashlib.sha1(content_bytes).hexdigest()
     }
-    async with session.post(str(upload_url), data=content_bytes, headers=headers) as r:
-        r = await r.json()
-
-    if r.get('status') is not None:
-        raise codes.get(B2Error(r['status'], r['code']))(r['message'])
+    r = await http(str(upload_url), session=session, method='POST', headers=headers, data=content_bytes)
 
     return File.from_response(r)
 
@@ -270,7 +286,7 @@ async def delete_file(
         file_id: str,
         session: ClientSession,
         conn_info: B2ConnectionInfo
-) -> ClientResponse:
+) -> DeletedFile:
     """
     Deletes a file from a bucket.
 
@@ -295,12 +311,12 @@ async def delete_file(
     """
     account = await authorise_account(conn_info, session)
 
-    async with session.get(f'{account.api_url}/b2api/v2/b2_delete_file_version',
-                           params={'fileName': file_name, 'fileId': file_id},
-                           headers={'Authorization': account.authorisation_token}) as r:
-        r = await r.json()
+    r = await http(
+        f'{account.api_url}/b2api/v2/b2_delete_file_version',
+        session=session,
+        method='GET',
+        params={'fileName': file_name, 'fileId': file_id},
+        headers={'Authorization': account.authorisation_token}
+    )
 
-    if r.get('status') is not None:
-        raise codes.get(B2Error(r['status'], r['code']))(r['message'])
-
-    return DeletedFile.from_response(r)  # type: ignore
+    return DeletedFile.from_response(r)
