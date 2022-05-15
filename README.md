@@ -7,7 +7,10 @@
     <img alt="Python Version" src="https://img.shields.io/badge/python-3.8.10-blue.svg">
   </a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">
-     <img src="https://img.shields.io/badge/license-GNU GPLv3-green" alt="discord.py">
+     <img src="https://img.shields.io/badge/license-GNU GPLv3-green" alt="GNU GPLv3">
+  </a>
+  <a href="https://www.github.com/Void-ux/aiob2">
+     <img src="https://shields.io/badge/release-v0.1.1-blue" alt="Version 0.1.1">
   </a>
 </p>
 
