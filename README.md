@@ -4,13 +4,13 @@
 
 <p align="center">
   <a href="https://www.python.org/downloads/">
-    <img alt="Python Version" src="https://img.shields.io/badge/python-3.8.10-blue.svg">
+    <img alt="Python Version" src="https://img.shields.io/badge/python-3.8.10-blue.svg?color=3776AB&style=for-the-badge">
+  </a>
+  <a href="https://img.shields.io/pypi/v/aiob2">
+     <img src="https://img.shields.io/pypi/v/aiob2?color=8BC34A&style=for-the-badge" alt="PyPi">
   </a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">
-     <img src="https://img.shields.io/badge/license-GNU GPLv3-green" alt="GNU GPLv3">
-  </a>
-  <a href="https://www.github.com/Void-ux/aiob2">
-     <img src="https://shields.io/badge/release-v0.1.1-blue" alt="Version 0.1.1">
+     <img src="https://img.shields.io/badge/license-GNU GPLv3-green?color=C0C0C0&style=for-the-badge" alt="GNU GPLv3">
   </a>
 </p>
 
@@ -25,6 +25,10 @@ __**NOTE:**__ This API wrapper is by no means *complete* and has many endpoints 
 ---
 
 aiob2 is compatible with Python 3.8.10+ (this is an estimate). To install aiob2, run the following command in your (virtual) environment.
+```
+pip install aiob2
+```
+Alternatively, for the latest though least stable version, you can download it from the GitHub repo:
 ```
 pip install git+https://github.com/Void-ux/aiob2.git
 ```
