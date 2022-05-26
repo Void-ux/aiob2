@@ -6,11 +6,11 @@
   <a href="https://www.python.org/downloads/">
     <img alt="Python Version" src="https://img.shields.io/badge/python-3.8.10-blue.svg?color=3776AB&style=for-the-badge">
   </a>
-  <a href="https://img.shields.io/pypi/v/aiob2">
+  <a href="https://pypi.org/project/aiob2/">
      <img src="https://img.shields.io/pypi/v/aiob2?color=8BC34A&style=for-the-badge" alt="PyPi">
   </a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">
-     <img src="https://img.shields.io/badge/license-GNU GPLv3-green?color=C0C0C0&style=for-the-badge" alt="GNU GPLv3">
+     <img src="https://img.shields.io/pypi/l/aiob2?style=for-the-badge" alt="License">
   </a>
 </p>
 
@@ -107,4 +107,4 @@ file_id
 
 ---
 
-This project is released under the [GNU GPLv3 License](https://www.gnu.org/licenses/gpl-3.0.en.html).
+This project is released under the [MIT License](https://opensource.org/licenses/MIT).
