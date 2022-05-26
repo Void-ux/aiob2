@@ -11,6 +11,7 @@ with open('aiob2/__init__.py') as f:
 setup(
     name='aiob2',
     author='Dan',
+    author_email='77840397+Void-ux@users.noreply.github.com',
     url='https://github.com/Void-ux/aiob2/',
     project_urls={
         'Issue Tracker': 'https://github.com/Void-ux/aiob2/issues/',
