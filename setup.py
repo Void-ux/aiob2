@@ -24,7 +24,7 @@ setup(
     long_description_content_type='text/markdown',
     python_requires='>=3.8.10',
     classifiers=[
-        'License :: OSI Approved :: GNU General Public License version 3.0 (GPL-3.0)',
+        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
         'Intended Audience :: Developers',
         'Natural Language :: English',
         'Operating System :: OS Independent',
