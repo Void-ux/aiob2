@@ -6,7 +6,7 @@ from .exceptions import codes, B2Error
 from .types import *
 
 
-async def http(
+async def _http(
         url: str,
         *,
         session: ClientSession,
@@ -25,7 +25,7 @@ async def http(
     return r
 
 
-async def authorise_account(
+async def _authorise_account(
         conn_info: B2ConnectionInfo,
         session: ClientSession
 ) -> AuthorisedAccount:
@@ -50,7 +50,7 @@ async def authorise_account(
     basic_auth_string = 'Basic ' + base64.b64encode(id_and_key).decode()
     headers = {'Authorization': basic_auth_string}
 
-    r = await http(
+    r = await _http(
         'https://api.backblazeb2.com/b2api/v2/b2_authorize_account',
         session=session,
         method='GET',
@@ -84,9 +84,9 @@ async def get_upload_url(
         Returns a URL that should be used for uploading files, and a token
         to be used as the authorisation for API calls to that URL.
     """
-    account = await authorise_account(conn_info, session)
+    account = await _authorise_account(conn_info, session)
 
-    r = await http(
+    r = await _http(
         f'{account.api_url}/b2api/v2/b2_get_upload_url',
         session=session,
         method='GET',
@@ -139,7 +139,7 @@ async def upload_file(
         'Content-Type': content_type,
         'X-Bz-Content-Sha1': hashlib.sha1(content_bytes).hexdigest()
     }
-    r = await http(str(upload_url), session=session, method='POST', headers=headers, data=content_bytes)
+    r = await _http(str(upload_url), session=session, method='POST', headers=headers, data=content_bytes)
 
     return File.from_response(r)
 
@@ -164,7 +164,7 @@ async def delete_file(
     session: ClientSession
         The ClientSession to send the HTTP requests with
     conn_info: B2ConnectionInfo
-        The token obtained through authorise_account as authorisation for
+        The token obtained through _authorise_account as authorisation for
         the API URL.
     Returns
     ---------
@@ -172,9 +172,9 @@ async def delete_file(
         Returns a JSON response with data on the file deletion, and it's status,
         for more info: https://www.backblaze.com/b2/docs/b2_delete_file_version.html
     """
-    account = await authorise_account(conn_info, session)
+    account = await _authorise_account(conn_info, session)
 
-    r = await http(
+    r = await _http(
         f'{account.api_url}/b2api/v2/b2_delete_file_version',
         session=session,
         method='GET',
