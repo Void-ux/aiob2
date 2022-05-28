@@ -9,8 +9,8 @@
   <a href="https://pypi.org/project/aiob2/">
      <img src="https://img.shields.io/pypi/v/aiob2?color=8BC34A&style=for-the-badge" alt="PyPi">
   </a>
-  <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">
-     <img src="https://img.shields.io/pypi/l/aiob2?style=for-the-badge" alt="License">
+  <a href="https://opensource.org/licenses/MIT">
+     <img src="https://img.shields.io/pypi/l/aiob2?color=C0C0C0&style=for-the-badge" alt="License">
   </a>
 </p>
 
