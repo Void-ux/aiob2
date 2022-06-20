@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "aiob2"
-version = "0.1.2"
+version = "0.2.2"
 description = "A simple and easy to use async wrapper for Backblaze's B2 bucket API."
 authors = ["Void-ux <the.void.altacc@gmail.com>"]
 license = "MIT"
