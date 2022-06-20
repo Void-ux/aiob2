@@ -2,8 +2,22 @@
 name = "aiob2"
 version = "0.2.2"
 description = "A simple and easy to use async wrapper for Backblaze's B2 bucket API."
-authors = ["Void-ux <the.void.altacc@gmail.com>"]
 license = "MIT"
+authors = ["Dan <the.void.altacc@gmail.com>"]
+
+readme = "README.md"
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Developers",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+]
+
+[tool.poetry.urls]
+"Bug Tracker" = "https://github.com/Void-ux/aiob2/issues/"
 
 [tool.poetry.dependencies]
 python = "^3.8"
