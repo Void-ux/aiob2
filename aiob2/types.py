@@ -52,7 +52,7 @@ class File(NamedTuple):
         )
 
     def __repr__(self):
-        return f"<File {' '.join([f'{key}={value}' for key, value in zip(self, self._asdict())])}>"
+        return f"<File {' '.join([f'{key}={value}' for key, value in zip(self._asdict(), self)])}>"
 
     def __eq__(self, other):
         if isinstance(other, File):
@@ -136,3 +136,67 @@ class DeletedFile(NamedTuple):
 
     def __repr__(self):
         return f'<DeletedFile file_name={self.file_name} file_id={self.file_id}>'
+
+
+class DownloadAuthorisation(NamedTuple):
+    authorisation_token: str
+    bucket_id: str
+    file_name_prefix: str
+
+    @classmethod
+    def from_response(cls, response: dict):
+        return cls(
+            authorisation_token=response['authorizationToken'],
+            bucket_id=response['bucketId'],
+            file_name_prefix=response['fileNamePrefix']
+        )
+
+    def __eq__(self, other):
+        if isinstance(other, DownloadAuthorisation):
+            return self.authorisation_token == other.authorisation_token and \
+                   self.bucket_id == other.bucket_id and \
+                   self.file_name_prefix == other.file_name_prefix
+
+        return False
+
+    def __repr__(self):
+        return f'<DownloadAuthorisation authorisation_token={self.authorisation_token} bucket_id={self.bucket_id} ' \
+               f'file_name_prefix={self.file_name_prefix}>'
+
+
+class DownloadedFile(NamedTuple):
+    file_name: str
+    file_id: str
+    content_sha1: str
+    upload_timestamp: datetime.datetime
+    accept_ranges: str
+    content: bytes
+    content_type: str
+    content_length: str
+    date: str
+
+    @classmethod
+    def from_response(cls, data: bytes, response: dict):
+        timestamp = float(response['X-Bz-Upload-Timestamp'])
+        timestamp /= 1000.
+
+        return cls(
+            file_name=response['x-bz-file-name'],
+            file_id=response['x-bz-file-id'],
+            content_sha1=response['x-bz-content-sha1'],
+            upload_timestamp=datetime.datetime.utcfromtimestamp(timestamp),
+            accept_ranges=response['Accept-Ranges'],
+            content=data,
+            content_type=response['Content-Type'],
+            content_length=response['Content-Length'],
+            date=response['Date']
+        )
+
+    def __eq__(self, other):
+        if isinstance(other, DownloadedFile):
+            return self.file_id == other.file_id
+
+        return False
+
+    def __repr__(self):
+        return f"<DownloadedFile {' '.join([f'{key}={value}' for key, value in zip(self._asdict(), self)])}>"
