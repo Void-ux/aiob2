@@ -57,7 +57,7 @@ async def main():
             file_name='home.jpeg',
             session=s,
             bucket_id='bucket_id',
-            conn_info=conn_info
+            connection_info=conn_info
         )
 
 
@@ -67,20 +67,20 @@ if __name__ == '__main__':
 
 And that's it! `upload_file()` returns a `File` object that neatly wraps everything Backblaze's API has provided us with. The `File` object has the following **attributes**:
 ```
-account_id
-action
-bucket_id
-content_length
-content_sha1
-content_md5
-content_type
-file_id
-file_info
-file_name
-file_retention
-legal_hold
-server_side_encryption
-upload_timestamp
+- account_id: str
+- action: str
+- bucket_id: str
+- content_length: int
+- content_sha1: str
+- content_md5: str
+- content_type: str
+- file_id: str
+- file_info: dict
+- file_name: str
+- file_retention: dict
+- legal_hold: dict
+- server_side_encryption: dict
+- upload_timestamp: datetime.datetime
 ```
 You can visit the [bucket.py](https://github.com/Void-ux/aiob2/aiob2/bucket.py#L20-L66) file to view the source code of this class.
 
@@ -93,15 +93,55 @@ from aiob2 import bucket
 await bucket.delete_file(
     file_name='home.jpeg',
     file_id='4_z275c6d8d808e543872cc0215_f11088ad8814ee120_d20220514_m211709_c002_v0001096_t0019_u01652563029709',
-    conn_info=conn_info,
+    connection_info=conn_info,
     session=s
 )
 ```
 This will return a `DeletedFile` object, it has the following **attributes**:
 ```
-file_name
-file_id
+- file_name: str
+- file_id: str
 ```
+
+
+### Downloading
+Downloading a file can be done either with the `name` or the `id` of it.
+
+```python
+# We can remove the boilerplate code and get straight to the method
+from aiob2 import bucket
+
+await bucket.download_file_by_name(
+    file_name='home.jpeg',
+    bucket_name='foo',
+    connection_info=conn_info,
+    session=s
+)
+```
+
+```python
+from aiob2 import bucket
+
+await bucket.download_file_by_id(
+    file_id='home.jpeg',
+    connection_info=conn_info,
+    session=s
+)
+```
+This will return a `DownloadedFile` object with the following attributes:
+```
+- file_name: str
+- file_id: str
+- content_sha1: str
+- upload_timestamp: datetime.datetime
+- accept_ranges: str
+- content: bytes
+- content_type: str
+- content_length: str
+- date: str
+```
+**NOTE:** There are many kwargs you can provide when downloading a file, it's recommended to take a look at the source 
+code to see if any can benefit you and your usecase.
 
 # License
 
