@@ -20,10 +20,10 @@ class File(NamedTuple):
     content_sha1: str
     content_md5: str
     content_type: str
-    file_id: str
-    file_info: dict
-    file_name: str
-    file_retention: dict
+    id: str
+    info: dict
+    name: str
+    retention: dict
     legal_hold: dict
     server_side_encryption: dict
     upload_timestamp: datetime.datetime
@@ -42,10 +42,10 @@ class File(NamedTuple):
             content_sha1=response['contentSha1'],
             content_md5=response['contentMd5'],
             content_type=response['contentType'],
-            file_id=response['fileId'],
-            file_info=response['fileInfo'],
-            file_name=response['fileName'],
-            file_retention=response['fileRetention'],
+            id=response['fileId'],
+            info=response['fileInfo'],
+            name=response['fileName'],
+            retention=response['fileRetention'],
             legal_hold=response['legalHold'],
             server_side_encryption=response['serverSideEncryption'],
             upload_timestamp=datetime.datetime.utcfromtimestamp(timestamp)
@@ -56,7 +56,7 @@ class File(NamedTuple):
 
     def __eq__(self, other):
         if isinstance(other, File):
-            return self.file_id == other.file_id
+            return self.id == other.id
 
         return False
 
@@ -118,24 +118,24 @@ class UploadUrl(NamedTuple):
 
 
 class DeletedFile(NamedTuple):
-    file_name: str
-    file_id: str
+    name: str
+    id: str
 
     @classmethod
     def from_response(cls, response: dict):
         return cls(
-            file_name=response['fileName'],
-            file_id=response['fileId']
+            name=response['fileName'],
+            id=response['fileId']
         )
 
     def __eq__(self, other):
-        if isinstance(other, DeletedFile):
-            return self.file_id == other.file_id
+        if isinstance(other, DeletedFile) or isinstance(other, File):
+            return self.id == other.id
 
         return False
 
     def __repr__(self):
-        return f'<DeletedFile file_name={self.file_name} file_id={self.file_id}>'
+        return f'<DeletedFile file_name={self.name} file_id={self.id}>'
 
 
 class DownloadAuthorisation(NamedTuple):
@@ -165,15 +165,15 @@ class DownloadAuthorisation(NamedTuple):
 
 
 class DownloadedFile(NamedTuple):
-    file_name: str
-    file_id: str
+    name: str
+    id: str
     content_sha1: str
     upload_timestamp: datetime.datetime
     accept_ranges: str
     content: bytes
     content_type: str
     content_length: str
-    date: str
+    download_date: str
 
     @classmethod
     def from_response(cls, data: bytes, response: dict):
@@ -181,20 +181,20 @@ class DownloadedFile(NamedTuple):
         timestamp /= 1000.
 
         return cls(
-            file_name=response['x-bz-file-name'],
-            file_id=response['x-bz-file-id'],
+            name=response['x-bz-file-name'],
+            id=response['x-bz-file-id'],
             content_sha1=response['x-bz-content-sha1'],
             upload_timestamp=datetime.datetime.utcfromtimestamp(timestamp),
             accept_ranges=response['Accept-Ranges'],
             content=data,
             content_type=response['Content-Type'],
             content_length=response['Content-Length'],
-            date=response['Date']
+            download_date=response['Date']
         )
 
     def __eq__(self, other):
         if isinstance(other, DownloadedFile):
-            return self.file_id == other.file_id
+            return self.id == other.id
 
         return False
 
