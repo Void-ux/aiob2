@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "aiob2"
-version = "0.2.1"
+version = "0.3.0"
 description = "A simple and easy to use async wrapper for Backblaze's B2 bucket API."
 license = "MIT"
 authors = ["Dan <the.void.altacc@gmail.com>"]
@@ -23,6 +23,9 @@ classifiers = [
 python = "^3.8"
 
 [tool.poetry.dev-dependencies]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
