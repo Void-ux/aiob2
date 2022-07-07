@@ -1,5 +1,6 @@
 from .exceptions import *
 from .types import *
+from .bucket import Client
 
 __title__ = 'aiob2'
 __author__ = 'Dan'
