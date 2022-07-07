@@ -40,7 +40,7 @@ pip install git+https://github.com/Void-ux/aiob2.git
 import aiohttp
 import asyncio
 
-from aiob2 import B2ConnectionInfo, bucket
+from aiob2 import B2ConnectionInfo, Client
 
 # Construct our connection info
 conn_info = B2ConnectionInfo('key_id', 'app_id')
@@ -51,13 +51,12 @@ with open(r'C:\Users\MS1\Pictures\Camera Roll\IMG_5316.jpeg', 'rb') as file:
 
 async def main():
     async with aiohttp.ClientSession() as s:
-        await bucket.upload_file(
+        client = Client(conn_info)
+        file = await client.upload_file(
             content_bytes=data,
             content_type='image/jpeg',
-            file_name='home.jpeg',
-            session=s,
+            file_name='test.jpg',
             bucket_id='bucket_id',
-            connection_info=conn_info
         )
 
 
@@ -74,33 +73,26 @@ And that's it! `upload_file()` returns a `File` object that neatly wraps everyth
 - content_sha1: str
 - content_md5: str
 - content_type: str
-- file_id: str
-- file_info: dict
-- file_name: str
-- file_retention: dict
+- id: str
+- info: dict
+- name: str
+- retention: dict
 - legal_hold: dict
 - server_side_encryption: dict
 - upload_timestamp: datetime.datetime
 ```
-You can visit the [bucket.py](https://github.com/Void-ux/aiob2/aiob2/bucket.py#L20-L66) file to view the source code of this class.
+You can visit the [bucket.py](https://github.com/Void-ux/aiob2/blob/master/aiob2/types.py#L15-L29) file to view the source code of this class.
 
 ### Deleting
 
 ```python
 # We can remove the boilerplate code and get straight to the method
-from aiob2 import bucket
-
-await bucket.delete_file(
-    file_name='home.jpeg',
-    file_id='4_z275c6d8d808e543872cc0215_f11088ad8814ee120_d20220514_m211709_c002_v0001096_t0019_u01652563029709',
-    connection_info=conn_info,
-    session=s
-)
+deleted_file = await client.delete_file(file_name='file_name', file_id='file_id')
 ```
 This will return a `DeletedFile` object, it has the following **attributes**:
 ```
-- file_name: str
-- file_id: str
+- name: str
+- id: str
 ```
 
 
@@ -109,29 +101,16 @@ Downloading a file can be done either with the `name` or the `id` of it.
 
 ```python
 # We can remove the boilerplate code and get straight to the method
-from aiob2 import bucket
-
-await bucket.download_file_by_name(
-    file_name='home.jpeg',
-    bucket_name='foo',
-    connection_info=conn_info,
-    session=s
-)
+downloaded_file = await client.download_file_by_name(file_name='file_name', bucket_name='bucket_name')
 ```
 
 ```python
-from aiob2 import bucket
-
-await bucket.download_file_by_id(
-    file_id='home.jpeg',
-    connection_info=conn_info,
-    session=s
-)
+downloaded_file = await client.download_file_by_id(file_id='file_id')
 ```
 This will return a `DownloadedFile` object with the following attributes:
 ```
-- file_name: str
-- file_id: str
+- name: str
+- id: str
 - content_sha1: str
 - upload_timestamp: datetime.datetime
 - accept_ranges: str
