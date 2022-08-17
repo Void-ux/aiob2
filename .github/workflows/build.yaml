@@ -38,13 +38,16 @@ jobs:
           fetch-depth: 0
 
       - name: "Setup Poetry @ ${{ matrix.python-version }}"
-        run: pipx install poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.2.0b2
+          virtualenvs-create: true
+          virtualenvs-in-project: false
 
       - name: "Setup Python @ ${{ matrix.python-version }}"
         uses: actions/setup-python@v3
         with:
           python-version: "${{ matrix.python-version }}"
-          cache: poetry
 
       - name: "Install deps @ ${{ matrix.python-version }}"
         env:
@@ -58,7 +61,6 @@ jobs:
           poetry run python -c 'import aiob2'
 
       - name: Test Suite
-        uses: ./.github/actions/my-action
         with:
           BUCKET_ID: ${{ secrets.BUCKET_ID }}
           KEY_ID: ${{ secrets.KEY_ID }}
