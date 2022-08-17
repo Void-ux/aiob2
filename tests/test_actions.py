@@ -34,7 +34,7 @@ class TestActions:
 
         # Download (by name)
 
-        downloaded_file = await client.download_file_by_name(file_name=file.name, bucket_name='imooog')
+        downloaded_file = await client.download_file_by_name(file_name=file.name, bucket_name=os.environ['BUCKET_NAME'])
 
         assert downloaded_file.name == file.name
         assert downloaded_file.id == file.id
