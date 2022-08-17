@@ -23,7 +23,7 @@ class Client:
         if self._http._session is not None:
             await self.close()
         if exc_type or exc_val or exc_tb:
-            raise traceback.format_exception(exc_type, exc_val, exc_tb)
+            raise
 
     async def close(self):
         await self._http._session.close()
