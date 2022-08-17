@@ -1,9 +1,7 @@
-from __future__ import annotations
-
 import aiohttp
 import base64
 
-from typing import Union, Optional
+from typing import Union, Optional, Dict, Tuple
 from .exceptions import codes, B2Error
 from .models import B2ConnectionInfo, AuthorisedAccount, UploadData
 
@@ -23,7 +21,7 @@ class HTTPClient:
             url: str,
             *,
             method: str,
-            **kwargs) -> Union[Union[dict, aiohttp.ClientResponse], tuple[dict, bytes]]:
+            **kwargs) -> Union[Union[Dict, aiohttp.ClientResponse], Tuple[Dict, bytes]]:
         if self._session is None:
             self._session = await self._generate_session()
 
