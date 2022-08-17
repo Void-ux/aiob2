@@ -1,5 +1,6 @@
 import datetime
-from typing import NamedTuple
+from typing import NamedTuple, Any
+from pydantic import BaseModel as PydanticBaseModel, Extra
 
 
 class B2ConnectionInfo(NamedTuple):
@@ -12,7 +13,13 @@ class B2AuthInfo(NamedTuple):
     auth_token: str
 
 
-class File(NamedTuple):
+class BaseModel(PydanticBaseModel):
+    class Config:
+        allow_mutation = False
+        extra = Extra.forbid
+
+
+class File(BaseModel):
     account_id: str
     action: str
     bucket_id: str
@@ -52,7 +59,7 @@ class File(NamedTuple):
         )
 
     def __repr__(self):
-        return f"<File {' '.join([f'{key}={value}' for key, value in zip(self._asdict(), self)])}>"
+        return f"<File {str(self)}>"
 
     def __eq__(self, other):
         if isinstance(other, File):
@@ -61,13 +68,13 @@ class File(NamedTuple):
         return False
 
 
-class AuthorisedAccount(NamedTuple):
-    account_id: int
+class AuthorisedAccount(BaseModel):
+    account_id: str
     authorisation_token: str
-    allowed: dict
+    allowed: dict[str, Any]
     api_url: str
     download_url: str
-    recommended_part_size: str
+    recommended_part_size: int
     absolute_minimum_part_size: int
     s3_api_url: str
 
@@ -85,7 +92,7 @@ class AuthorisedAccount(NamedTuple):
         )
 
     def __repr__(self):
-        return f"<AuthorisedAccount {' '.join([f'{key}={value}' for key, value in zip(self._asdict(), self)])}>"
+        return f"<AuthorisedAccount {str(self)}>"
 
     def __eq__(self, other):
         if isinstance(other, AuthorisedAccount):
@@ -94,7 +101,7 @@ class AuthorisedAccount(NamedTuple):
         return False
 
 
-class UploadUrl(NamedTuple):
+class UploadData(BaseModel):
     bucket_id: str
     upload_url: str
     authorisation_token: str
@@ -117,7 +124,7 @@ class UploadUrl(NamedTuple):
         return self.upload_url
 
 
-class DeletedFile(NamedTuple):
+class DeletedFile(BaseModel):
     name: str
     id: str
 
@@ -135,10 +142,10 @@ class DeletedFile(NamedTuple):
         return False
 
     def __repr__(self):
-        return f'<DeletedFile file_name={self.name} file_id={self.id}>'
+        return f'<DeletedFile {str(self)}>'
 
 
-class DownloadAuthorisation(NamedTuple):
+class DownloadAuthorisation(BaseModel):
     authorisation_token: str
     bucket_id: str
     file_name_prefix: str
@@ -160,11 +167,10 @@ class DownloadAuthorisation(NamedTuple):
         return False
 
     def __repr__(self):
-        return f'<DownloadAuthorisation authorisation_token={self.authorisation_token} bucket_id={self.bucket_id} ' \
-               f'file_name_prefix={self.file_name_prefix}>'
+        return f'<DownloadAuthorisation {str(self)}>'
 
 
-class DownloadedFile(NamedTuple):
+class DownloadedFile(BaseModel):
     name: str
     id: str
     content_sha1: str
@@ -199,4 +205,4 @@ class DownloadedFile(NamedTuple):
         return False
 
     def __repr__(self):
-        return f"<DownloadedFile {' '.join([f'{key}={value}' for key, value in zip(self._asdict(), self)])}>"
+        return f"<DownloadedFile {str(self)}>"
