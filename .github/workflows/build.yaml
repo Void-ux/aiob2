@@ -49,7 +49,6 @@ jobs:
           poetry run python -c 'import aiob2'
 
       - name: Test Suite
-        uses: ./.github/workflows/build.yaml
         env:
           BUCKET_ID: ${{ secrets.BUCKET_ID }}
           KEY_ID: ${{ secrets.KEY_ID }}
