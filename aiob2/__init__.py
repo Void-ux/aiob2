@@ -1,5 +1,5 @@
 from .exceptions import *
-from .types import *
+from .models import *
 from .bucket import Client
 
 __title__ = 'aiob2'
