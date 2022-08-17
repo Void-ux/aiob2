@@ -1,15 +1,20 @@
 import aiohttp
 import base64
 
-from typing import Union
+from typing import Union, Optional
 from .exceptions import codes, B2Error
-from .types import B2ConnectionInfo, AuthorisedAccount, UploadUrl
+from .models import B2ConnectionInfo, AuthorisedAccount, UploadData
 
 
 class HTTPClient:
-    def __init__(self, connection_info: B2ConnectionInfo):
+    def __init__(self, connection_info: B2ConnectionInfo, session: Optional[aiohttp.ClientSession] = None):
         self.connection_info = connection_info
-        self.session = aiohttp.ClientSession()
+        self._session = session
+
+    @staticmethod
+    async def _generate_session() -> aiohttp.ClientSession:
+        """This method must be a coroutine to avoid the deprecation warning of Python 3.9+."""
+        return aiohttp.ClientSession()
 
     async def request(
             self,
@@ -17,8 +22,11 @@ class HTTPClient:
             *,
             method: str,
             **kwargs) -> Union[Union[dict, aiohttp.ClientResponse], tuple[dict, bytes]]:
+        if self._session is None:
+            self._session = await self._generate_session()
+
         if method == 'GET':
-            async with self.session.get(url, **kwargs) as r:
+            async with self._session.get(url, **kwargs) as r:
                 try:
                     json_r = await r.json()
                 except aiohttp.ContentTypeError:
@@ -27,7 +35,7 @@ class HTTPClient:
                     # We could assume everything went alright, and end it here
                     return dict(r.headers), await r.read()
         else:
-            async with self.session.post(url, **kwargs) as r:
+            async with self._session.post(url, **kwargs) as r:
                 json_r = await r.json()
 
         if json_r.get('status') is not None:
@@ -58,7 +66,7 @@ class HTTPClient:
 
         return AuthorisedAccount.from_response(r)
 
-    async def get_upload_url(self, bucket_id: str) -> UploadUrl:
+    async def get_upload_url(self, bucket_id: str) -> UploadData:
         """
         Gets an upload URL for uploading any files to a specified bucket.
 
@@ -70,8 +78,8 @@ class HTTPClient:
             The ID of the bucket to get the upload URL for.
         Returns
         ---------
-        UploadUrl
-            An UploadUrl object containing the data Blackblaze sent back.
+        UploadData
+            An UploadData object containing the data Blackblaze sent back.
         """
         account = await self.authorise_account()
 
@@ -82,4 +90,4 @@ class HTTPClient:
             params={'bucketId': bucket_id}
         )
 
-        return UploadUrl.from_response(r)
+        return UploadData.from_response(r)
