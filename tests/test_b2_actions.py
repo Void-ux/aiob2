@@ -15,7 +15,7 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
-class TestActions:
+class TestB2Actions:
     @pytest.mark.asyncio
     async def test_actions(self):
         client = Client(conn_info)
