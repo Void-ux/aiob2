@@ -3,15 +3,18 @@
 ---
 
 <p align="center">
-  <a href="https://www.python.org/downloads/">
-    <img alt="Python Version" src="https://img.shields.io/badge/python-3.8.10-blue.svg?color=3776AB&style=for-the-badge">
-  </a>
-  <a href="https://pypi.org/project/aiob2/">
-     <img src="https://img.shields.io/pypi/v/aiob2?color=8BC34A&style=for-the-badge" alt="PyPi">
-  </a>
-  <a href="https://opensource.org/licenses/MIT">
-     <img src="https://img.shields.io/pypi/l/aiob2?color=C0C0C0&style=for-the-badge" alt="License">
-  </a>
+    <a href="https://www.python.org/downloads/">
+        <img src="https://img.shields.io/pypi/pyversions/aiob2?style=for-the-badge" alt="Python Version">
+    </a>
+    <a href="https://github.com/Void-ux/aiob2/actions">
+        <img src="https://img.shields.io/github/workflow/status/Void-ux/aiob2/Build?style=for-the-badge" alt="Build">
+    </a>
+    <a href="https://pypi.org/project/aiob2/">
+        <img src="https://img.shields.io/pypi/v/aiob2?color=8BC34A&style=for-the-badge" alt="PyPi">
+    </a>
+    <a href="https://opensource.org/licenses/MIT">
+        <img src="https://img.shields.io/pypi/l/aiob2?color=C0C0C0&style=for-the-badge" alt="License">
+    </a>
 </p>
 
 aiob2 is an asynchronous API wrapper for the [Backblaze B2 Bucket API](https://www.backblaze.com/b2/docs/calling.html).
