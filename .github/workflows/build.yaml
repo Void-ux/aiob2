@@ -10,18 +10,6 @@ on:
     branches:
       - master
 
-  workflow_call:
-    secrets:
-      BUCKET_ID:
-        description: 'A bucket id passed from the caller workflow'
-        required: true
-      KEY_ID:
-        description: 'A key id passed from the caller workflow'
-        required: true
-      APP_ID:
-        description: 'An app id passed from the caller workflow'
-        required: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -62,7 +50,7 @@ jobs:
 
       - name: Test Suite
         uses: ./.github/workflows/build.yaml
-        with:
+        env:
           BUCKET_ID: ${{ secrets.BUCKET_ID }}
           KEY_ID: ${{ secrets.KEY_ID }}
           APP_ID: ${{ secrets.APP_ID }}
