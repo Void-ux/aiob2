@@ -1,5 +1,5 @@
 import datetime
-from typing import NamedTuple, Any
+from typing import NamedTuple, Any, Dict
 from pydantic import BaseModel as PydanticBaseModel, Extra
 
 
@@ -71,7 +71,7 @@ class File(BaseModel):
 class AuthorisedAccount(BaseModel):
     account_id: str
     authorisation_token: str
-    allowed: dict[str, Any]
+    allowed: Dict[str, Any]
     api_url: str
     download_url: str
     recommended_part_size: int
