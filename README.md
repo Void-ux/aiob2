@@ -53,14 +53,14 @@ with open(r'C:\Users\MS1\Pictures\Camera Roll\IMG_5316.jpeg', 'rb') as file:
     data = file.read()
 
 async def main():
-    async with aiohttp.ClientSession() as s:
-        client = Client(conn_info)
-        file = await client.upload_file(
-            content_bytes=data,
-            content_type='image/jpeg',
-            file_name='test.jpg',
-            bucket_id='bucket_id',
-        )
+    client = Client(conn_info)
+    file = await client.upload_file(
+        content_bytes=data,
+        content_type='image/jpeg',
+        file_name='test.jpg',
+        bucket_id='bucket_id',
+    )
+    await client.close()
 
 
 if __name__ == '__main__':
@@ -103,7 +103,6 @@ This will return a `DeletedFile` object, it has the following **attributes**:
 Downloading a file can be done either with the `name` or the `id` of it.
 
 ```python
-# We can remove the boilerplate code and get straight to the method
 downloaded_file = await client.download_file_by_name(file_name='file_name', bucket_name='bucket_name')
 ```
 
