@@ -1,0 +1,67 @@
+# Runs a build test on commit to ensure functionality.
+
+name: Build
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+  workflow_call:
+    secrets:
+      BUCKET_ID:
+        description: 'A bucket id passed from the caller workflow'
+        required: true
+      KEY_ID:
+        description: 'A key id passed from the caller workflow'
+        required: true
+      APP_ID:
+        description: 'An app id passed from the caller workflow'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ '3.8', '3.9', '3.10' ]
+
+    name: "Build @ ${{ matrix.python-version }}"
+    steps:
+      - name: "Checkout Repository"
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: "Setup Poetry @ ${{ matrix.python-version }}"
+        run: pipx install poetry
+
+      - name: "Setup Python @ ${{ matrix.python-version }}"
+        uses: actions/setup-python@v3
+        with:
+          python-version: "${{ matrix.python-version }}"
+          cache: poetry
+
+      - name: "Install deps @ ${{ matrix.python-version }}"
+        env:
+          PY_VER: "${{ matrix.python-version }}"
+        run: |
+          poetry env use "$PY_VER"
+          poetry install -E docs -E tests -E speedups --no-dev --no-interaction
+
+      - name: Check it imports
+        run: |
+          poetry run python -c 'import aiob2'
+
+      - name: Test Suite
+        uses: ./.github/actions/my-action
+        with:
+          BUCKET_ID: ${{ secrets.BUCKET_ID }}
+          KEY_ID: ${{ secrets.KEY_ID }}
+          APP_ID: ${{ secrets.APP_ID }}
+        run: |
+          poetry run pytest
