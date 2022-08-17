@@ -6,13 +6,20 @@ from pathlib import Path
 
 from aiob2 import Client, B2ConnectionInfo
 
+# For local tests
+if sys.platform == "win32":
+    with open('.env', 'r') as file:
+        print(file)
+        for row in file:
+            print(row)
+            row = row.split('=')
+            os.environ[row[0]] = row[1].replace('\n', '')
+
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 path = Path(__file__).resolve().parent / 'payloads/test_image.jpg'
 conn_info = B2ConnectionInfo(os.environ['KEY_ID'], os.environ['APP_ID'])
 bucket_id = os.environ['BUCKET_ID']
-
-# For local tests
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 class TestB2Actions:
