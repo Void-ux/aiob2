@@ -1,20 +1,32 @@
+import traceback
+
+import aiohttp
 import hashlib
 
 from typing import Optional
 
-from .types import *
+from .models import *
 from .http import HTTPClient
 
 __all__ = ['Client']
 
 
 class Client:
-    def __init__(self, connection_info: B2ConnectionInfo):
+    def __init__(self, connection_info: B2ConnectionInfo, session: Optional[aiohttp.ClientSession] = None):
         self.connection_info = connection_info
-        self._http = HTTPClient(connection_info)
+        self._http = HTTPClient(connection_info, session)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self._http._session is not None:
+            await self.close()
+        if exc_type or exc_val or exc_tb:
+            raise traceback.format_exception(exc_type, exc_val, exc_tb)
 
     async def close(self):
-        await self._http.session.close()
+        await self._http._session.close()
 
     async def upload_file(
             self,
@@ -52,7 +64,7 @@ class Client:
             'Content-Type': content_type,
             'X-Bz-Content-Sha1': hashlib.sha1(content_bytes).hexdigest()
         }
-        r = await self._http.request(str(upload_url), method='POST', headers=headers, data=content_bytes)
+        r = await self._http.request(upload_url.upload_url, method='POST', headers=headers, data=content_bytes)
 
         return File.from_response(r)
 
