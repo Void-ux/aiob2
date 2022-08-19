@@ -1,7 +1,7 @@
 import aiohttp
 import base64
 
-from typing import Union, Optional, Dict, Tuple
+from typing import Optional, Dict
 from .exceptions import codes, B2Error
 from .models import B2ConnectionInfo, AuthorisedAccount, UploadData
 
@@ -21,27 +21,28 @@ class HTTPClient:
             url: str,
             *,
             method: str,
-            **kwargs) -> Union[Union[Dict, aiohttp.ClientResponse], Tuple[Dict, bytes]]:
+            **kwargs) -> Dict:
         if self._session is None:
             self._session = await self._generate_session()
 
         if method == 'GET':
             async with self._session.get(url, **kwargs) as r:
-                try:
-                    json_r = await r.json()
-                except aiohttp.ContentTypeError:
-                    # When decoding download_file_by_x we do not receive a
-                    # ClientResponse that could be converted into a dict
-                    # We could assume everything went alright, and end it here
-                    return dict(r.headers), await r.read()
+                json_r: Dict = await r.json()
         else:
             async with self._session.post(url, **kwargs) as r:
-                json_r = await r.json()
+                json_r: Dict = await r.json()
 
         if json_r.get('status') is not None:
-            raise codes.get(B2Error(json_r['status'], json_r['code']))(json_r['message'])
+            raise codes[(B2Error(json_r['status'], json_r['code']))](json_r['message'])
 
         return json_r
+
+    async def download_file(self, url: str, **kwargs):
+        if self._session is None:
+            self._session = await self._generate_session()
+
+        async with self._session.get(url, **kwargs) as r:
+            return dict(r.headers), await r.read()
 
     async def authorise_account(self) -> AuthorisedAccount:
         """
