@@ -8,7 +8,7 @@ from aiob2 import Client, B2ConnectionInfo
 
 # For local tests
 if sys.platform == "win32":
-    with open('.env', 'r') as file:
+    with open('C:\\Users\\MS1\\Desktop\\Projects\\aiob2\\tests\\.env', 'r') as file:
         print(file)
         for row in file:
             print(row)

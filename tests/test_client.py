@@ -10,7 +10,7 @@ from aiob2 import Client, B2ConnectionInfo
 
 # For local tests
 if sys.platform == "win32":
-    with open('.env', 'r') as file:
+    with open('C:\\Users\\MS1\\Desktop\\Projects\\aiob2\\tests\\.env', 'r') as file:
         print(file)
         for row in file:
             print(row)
@@ -40,4 +40,4 @@ class TestClient:
 
             await client.delete_file(file_name=file.name, file_id=file.id)
 
-        assert client._http._session.closed
+        assert client._http._session.closed  # type: ignore since we made an action, a session is guaranteed to have been created
