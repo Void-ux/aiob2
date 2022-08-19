@@ -1,5 +1,3 @@
-import traceback
-
 import aiohttp
 import hashlib
 
@@ -13,6 +11,9 @@ __all__ = ['Client']
 
 class Client:
     def __init__(self, connection_info: B2ConnectionInfo, session: Optional[aiohttp.ClientSession] = None):
+        if not isinstance(connection_info, B2ConnectionInfo):
+            raise TypeError('aiob2.Client requires connection_info to be of type B2ConnectionInfo')
+            
         self.connection_info = connection_info
         self._http = HTTPClient(connection_info, session)
 
@@ -26,7 +27,9 @@ class Client:
             raise
 
     async def close(self):
-        await self._http._session.close()
+        # This is really only possible if a Client is instantiated and no request is ever made
+        if isinstance(self._http._session, aiohttp.ClientSession):
+            await self._http._session.close()
 
     async def upload_file(
             self,
@@ -155,9 +158,8 @@ class Client:
         }
         headers = {key: value for key, value in headers.items() if value is not None}
 
-        data = await self._http.request(
+        data = await self._http.download_file(
             f'{account.download_url}/b2api/v2/b2_download_file_by_id',
-            method='GET',
             headers=headers,
             params={'fileId': file_id}
         )
@@ -202,7 +204,7 @@ class Client:
                 Overrides the current 'Content-Type' specified when the file was uploaded.
             server_side_encryption: Optional[str]
                 This is requires if the file was uploaded and stored using Server-Side Encryption with
-                Customer-Managed Keys (SSE-C)
+                Customer-Managed Keyts (SSE-C)
         Returns
         ---------
         DownloadedFile
@@ -223,10 +225,9 @@ class Client:
         }
         headers = {key: value for key, value in headers.items() if value is not None}
 
-        data = await self._http.request(
+        data = await self._http.download_file(
             f'{account.download_url}/file/{bucket_name}/{file_name}',
-            method='GET',
-            headers=headers,
+            headers=headers
         )
 
         return DownloadedFile.from_response(data[1], data[0])
