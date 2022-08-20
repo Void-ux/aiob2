@@ -62,8 +62,4 @@ class TestB2Actions:
         assert deleted_file.name == file.name
         assert deleted_file.id == file.id
 
-        account = await client._http.authorise_account()
-        data = await client._http.request(f'{account.api_url}/b2api/v2/b2_list_buckets', method='GET', params={'accountId': account.account_id}, headers={'Authorization': account.authorisation_token})
-        print(data)
-
         await client.close()
