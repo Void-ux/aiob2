@@ -72,6 +72,7 @@ class B2Error(NamedTuple):
 
 codes = {
     B2Error(400, 'bad_request'): B2BadRequest,
+    B2Error(400, 'file_not_present'): B2BadRequest,
 
     B2Error(401, 'unauthorized'): B2Unauthorised,
     B2Error(401, 'unsupported'): B2Unsupported,
