@@ -2,7 +2,7 @@ import aiohttp
 import base64
 
 from typing import Optional, Dict
-from .exceptions import codes, B2Error
+from .exceptions import codes, B2Error, B2Exception
 from .models import B2ConnectionInfo, AuthorisedAccount, UploadData
 
 
@@ -33,7 +33,10 @@ class HTTPClient:
                 json_r: Dict = await r.json()
 
         if json_r.get('status') is not None:
-            raise codes[(B2Error(json_r['status'], json_r['code']))](json_r['message'])
+            try:
+                raise codes[(B2Error(json_r['status'], json_r['code']))](json_r['message'])
+            except KeyError:
+                raise B2Exception(json_r['status'], json_r['code'])
 
         return json_r
 
