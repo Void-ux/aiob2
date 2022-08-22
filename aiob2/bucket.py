@@ -20,10 +20,7 @@ class Client:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self._http._session is not None:
-            await self.close()
-        if exc_type or exc_val or exc_tb:
-            raise
+        await self.close()
 
     async def close(self):
         # This is really only possible if a Client is instantiated and no request is ever made
@@ -31,12 +28,12 @@ class Client:
             await self._http._session.close()
 
     async def upload_file(
-            self,
-            *,
-            content_bytes: bytes,
-            content_type: str,
-            file_name: str,
-            bucket_id: str
+        self,
+        *,
+        content_bytes: bytes,
+        content_type: str,
+        file_name: str,
+        bucket_id: str
     ) -> File:
         """
         Uploads a file to a bucket.
@@ -94,16 +91,16 @@ class Client:
         return DeletedFile.from_response(data)
 
     async def download_file_by_id(
-            self,
-            file_id: str,
-            *,
-            content_disposition: Optional[str] = None,
-            content_language: Optional[str] = None,
-            expires: Optional[str] = None,
-            cache_control: Optional[str] = None,
-            content_encoding: Optional[str] = None,
-            content_type: Optional[str] = None,
-            server_side_encryption: Optional[str] = None
+        self,
+        file_id: str,
+        *,
+        content_disposition: Optional[str] = None,
+        content_language: Optional[str] = None,
+        expires: Optional[str] = None,
+        cache_control: Optional[str] = None,
+        content_encoding: Optional[str] = None,
+        content_type: Optional[str] = None,
+        server_side_encryption: Optional[str] = None
     ) -> DownloadedFile:
         """
         Downloads a file.
@@ -148,17 +145,17 @@ class Client:
         return DownloadedFile.from_response(data[1], data[0])
 
     async def download_file_by_name(
-            self,
-            file_name: str,
-            bucket_name: str,
-            *,
-            content_disposition: Optional[str] = None,
-            content_language: Optional[str] = None,
-            expires: Optional[str] = None,
-            cache_control: Optional[str] = None,
-            content_encoding: Optional[str] = None,
-            content_type: Optional[str] = None,
-            server_side_encryption: Optional[str] = None
+        self,
+        file_name: str,
+        bucket_name: str,
+        *,
+        content_disposition: Optional[str] = None,
+        content_language: Optional[str] = None,
+        expires: Optional[str] = None,
+        cache_control: Optional[str] = None,
+        content_encoding: Optional[str] = None,
+        content_type: Optional[str] = None,
+        server_side_encryption: Optional[str] = None
     ) -> DownloadedFile:
         """
         Downloads a file.
