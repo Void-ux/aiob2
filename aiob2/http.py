@@ -50,7 +50,7 @@ class HTTPClient:
                 try:
                     raise codes[(B2Error(response.status, data['code']))](data['message'])
                 except KeyError:
-                    raise B2Exception(response.status, data['code'])
+                    raise B2Exception(response.status, data['code']) from None  # prevent chaining the KeyError as a cause
 
         return data
 
@@ -65,7 +65,7 @@ class HTTPClient:
                 try:
                     raise codes[(B2Error(response.status, data['code']))](data['message'])
                 except KeyError:
-                    raise B2Exception(response.status, data['code'])
+                    raise B2Exception(response.status, data['code']) from None  # prevent chaining the KeyError as a cause
 
             return dict(response.headers), await response.read()
 
