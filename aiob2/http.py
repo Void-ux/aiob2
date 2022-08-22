@@ -1,9 +1,32 @@
 import aiohttp
 import base64
+import hashlib
 
-from typing import Optional, Dict
+from typing import Optional, Dict, Literal, Any, Tuple
+from urllib.parse import quote as _uriquote
 from .exceptions import codes, B2Error, B2Exception
-from .models import B2ConnectionInfo, AuthorisedAccount, UploadData
+from .models import *
+
+HTTPVerb = Literal['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+
+
+__all__ = ('HTTPClient', )
+
+
+class Route:
+    __slots__ = (
+        "verb",
+        "path",
+        "url",
+    )
+
+    def __init__(self, verb: HTTPVerb, api_url: str, path: str, **params: Any) -> None:
+        self.verb: HTTPVerb = verb
+        self.path: str = path
+        url = api_url + path
+        if params:
+            url = url.format_map({k: _uriquote(v) if isinstance(v, str) else v for k, v in params.items()})
+        self.url: str = url
 
 
 class HTTPClient:
@@ -16,38 +39,37 @@ class HTTPClient:
         """This method must be a coroutine to avoid the deprecation warning of Python 3.9+."""
         return aiohttp.ClientSession()
 
-    async def request(
-            self,
-            url: str,
-            *,
-            method: str,
-            **kwargs) -> Dict:
+    async def request(self, route: Route, **kwargs) -> Dict:
         if self._session is None:
             self._session = await self._generate_session()
 
-        if method == 'GET':
-            async with self._session.get(url, **kwargs) as r:
-                json_r: Dict = await r.json()
-        else:
-            async with self._session.post(url, **kwargs) as r:
-                json_r: Dict = await r.json()
+        async with self._session.request(route.verb, route.url, **kwargs) as response:
+            data = await response.json()
 
-        if json_r.get('status') is not None:
-            try:
-                raise codes[(B2Error(json_r['status'], json_r['code']))](json_r['message'])
-            except KeyError:
-                raise B2Exception(json_r['status'], json_r['code'])
+            if not response.ok:
+                try:
+                    raise codes[(B2Error(response.status, data['code']))](data['message'])
+                except KeyError:
+                    raise B2Exception(response.status, data['code'])
 
-        return json_r
+        return data
 
-    async def download_file(self, url: str, **kwargs):
+    async def _download_file(self, url: str, **kwargs) -> Tuple[Dict, bytes]:
+        """Separate method for downloading files, as we need to read() this"""
         if self._session is None:
             self._session = await self._generate_session()
 
-        async with self._session.get(url, **kwargs) as r:
-            return dict(r.headers), await r.read()
+        async with self._session.get(url, **kwargs) as response:
+            if not response.ok:
+                data = await response.json()
+                try:
+                    raise codes[(B2Error(response.status, data['code']))](data['message'])
+                except KeyError:
+                    raise B2Exception(response.status, data['code'])
 
-    async def authorise_account(self) -> AuthorisedAccount:
+            return dict(response.headers), await response.read()
+
+    async def _authorise_account(self) -> AuthorisedAccount:
         """
         Used to log in to the B2 API.
 
@@ -62,15 +84,12 @@ class HTTPClient:
         basic_auth_string = 'Basic ' + base64.b64encode(id_and_key).decode()
         headers = {'Authorization': basic_auth_string}
 
-        r = await self.request(
-            'https://api.backblazeb2.com/b2api/v2/b2_authorize_account',
-            method='GET',
-            headers=headers
-        )
+        route = Route('GET', 'https://api.backblazeb2.com/b2api/v2', '/b2_authorize_account')
+        r = await self.request(route=route, headers=headers)
 
         return AuthorisedAccount.from_response(r)
 
-    async def get_upload_url(self, bucket_id: str) -> UploadData:
+    async def _get_upload_url(self, bucket_id: str) -> UploadData:
         """
         Gets an upload URL for uploading any files to a specified bucket.
 
@@ -85,13 +104,111 @@ class HTTPClient:
         UploadData
             An UploadData object containing the data Blackblaze sent back.
         """
-        account = await self.authorise_account()
+        account = await self._authorise_account()
 
-        r = await self.request(
-            f'{account.api_url}/b2api/v2/b2_get_upload_url',
-            method='GET',
-            headers={'Authorization': account.authorisation_token},
-            params={'bucketId': bucket_id}
-        )
+        route = Route('GET', account.api_url, '/b2api/v2/b2_get_upload_url')
+        r = await self.request(route, headers={'Authorization': account.authorisation_token}, params={'bucketId': bucket_id})
 
         return UploadData.from_response(r)
+
+    async def _upload_file(
+            self,
+            *,
+            content_bytes: bytes,
+            content_type: str,
+            file_name: str,
+            bucket_id: str
+    ) -> Dict:
+        upload_url = await self._get_upload_url(bucket_id)
+
+        headers = {
+            'Authorization': upload_url.authorisation_token,
+            'X-Bz-File-Name': str(file_name),
+            'Content-Type': content_type,
+            'X-Bz-Content-Sha1': hashlib.sha1(content_bytes).hexdigest()
+        }
+        route = Route('POST', upload_url.upload_url, '')
+        data = await self.request(route=route, headers=headers, data=content_bytes)
+
+        return data
+
+    async def _delete_file(self, *, file_name: str, file_id: str) -> Dict:
+        account = await self._authorise_account()
+
+        route = Route('GET', account.api_url, '/b2api/v2/b2_delete_file_version')
+        data = await self.request(
+            route=route,
+            params={'fileName': file_name, 'fileId': file_id},
+            headers={'Authorization': account.authorisation_token}
+        )
+
+        return data
+
+    async def download_file_by_id(
+            self,
+            *,
+            file_id: str,
+            content_disposition: Optional[str] = None,
+            content_language: Optional[str] = None,
+            expires: Optional[str] = None,
+            cache_control: Optional[str] = None,
+            content_encoding: Optional[str] = None,
+            content_type: Optional[str] = None,
+            server_side_encryption: Optional[str] = None
+    ) -> Tuple[Dict, bytes]:
+
+        account = await self._authorise_account()
+
+        headers = {
+            'Authorization': account.authorisation_token,
+            'b2ContentDisposition': content_disposition,
+            'b2ContentLanguage': content_language,
+            'b2Expires': expires,
+            'b2CacheControl': cache_control,
+            'b2ContentEncoding': content_encoding,
+            'b2ContentType': content_type,
+            'serverSideEncryption': server_side_encryption
+        }
+        headers = {key: value for key, value in headers.items() if value is not None}
+
+        data = await self._download_file(
+            f'{account.download_url}/b2api/v2/b2_download_file_by_id',
+            headers=headers,
+            params={'fileId': file_id}
+        )
+
+        return data
+
+    async def download_file_by_name(
+            self,
+            *,
+            file_name: str,
+            bucket_name: str,
+            content_disposition: Optional[str] = None,
+            content_language: Optional[str] = None,
+            expires: Optional[str] = None,
+            cache_control: Optional[str] = None,
+            content_encoding: Optional[str] = None,
+            content_type: Optional[str] = None,
+            server_side_encryption: Optional[str] = None
+    ) -> Tuple[Dict, bytes]:
+        account = await self._authorise_account()
+
+        headers = {
+            'Authorization': account.authorisation_token,
+            'b2ContentDisposition': content_disposition,
+            'b2ContentLanguage': content_language,
+            'b2Expires': expires,
+            'b2CacheControl': cache_control,
+            'b2ContentEncoding': content_encoding,
+            'b2ContentType': content_type,
+            'serverSideEncryption': server_side_encryption
+        }
+        headers = {key: value for key, value in headers.items() if value is not None}
+
+        data = await self._download_file(
+            f'{account.download_url}/file/{bucket_name}/{file_name}',
+            headers=headers
+        )
+
+        return data

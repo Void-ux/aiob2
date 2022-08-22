@@ -1,5 +1,4 @@
 import aiohttp
-import hashlib
 
 from typing import Optional
 
@@ -59,17 +58,14 @@ class Client:
         File
             A File object wrapping the data provided by Backblaze.
         """
-        upload_url = await self._http.get_upload_url(bucket_id)
+        data = await self._http._upload_file(
+            content_bytes=content_bytes,
+            content_type=content_type,
+            file_name=file_name,
+            bucket_id=bucket_id
+        )
 
-        headers = {
-            'Authorization': upload_url.authorisation_token,
-            'X-Bz-File-Name': str(file_name),
-            'Content-Type': content_type,
-            'X-Bz-Content-Sha1': hashlib.sha1(content_bytes).hexdigest()
-        }
-        r = await self._http.request(upload_url.upload_url, method='POST', headers=headers, data=content_bytes)
-
-        return File.from_response(r)
+        return File.from_response(data)
 
     async def delete_file(
             self,
@@ -92,16 +88,10 @@ class Client:
         DeletedFile
             Returns a DeletedFile object with the attributes `file_name` and `file_id`.
         """
-        account = await self._http.authorise_account()
 
-        r = await self._http.request(
-            f'{account.api_url}/b2api/v2/b2_delete_file_version',
-            method='GET',
-            params={'fileName': file_name, 'fileId': file_id},
-            headers={'Authorization': account.authorisation_token}
-        )
+        data = await self._http._delete_file(file_name=file_name, file_id=file_id)
 
-        return DeletedFile.from_response(r)
+        return DeletedFile.from_response(data)
 
     async def download_file_by_id(
             self,
@@ -144,25 +134,17 @@ class Client:
         DownloadedFile
             A DownloadedFile object containing the data Backblaze sent.
         """
-        account = await self._http.authorise_account()
-
-        headers = {
-            'Authorization': account.authorisation_token,
-            'b2ContentDisposition': content_disposition,
-            'b2ContentLanguage': content_language,
-            'b2Expires': expires,
-            'b2CacheControl': cache_control,
-            'b2ContentEncoding': content_encoding,
-            'b2ContentType': content_type,
-            'serverSideEncryption': server_side_encryption
-        }
-        headers = {key: value for key, value in headers.items() if value is not None}
-
-        data = await self._http.download_file(
-            f'{account.download_url}/b2api/v2/b2_download_file_by_id',
-            headers=headers,
-            params={'fileId': file_id}
+        data = await self._http.download_file_by_id(
+            file_id=file_id,
+            content_disposition=content_disposition,
+            content_language=content_language,
+            expires=expires,
+            cache_control=cache_control,
+            content_encoding=content_encoding,
+            content_type=content_type,
+            server_side_encryption=server_side_encryption
         )
+
         return DownloadedFile.from_response(data[1], data[0])
 
     async def download_file_by_name(
@@ -210,24 +192,16 @@ class Client:
         DownloadedFile
             A DownloadedFile object containing the data Backblaze sent.
         """
-
-        account = await self._http.authorise_account()
-
-        headers = {
-            'Authorization': account.authorisation_token,
-            'b2ContentDisposition': content_disposition,
-            'b2ContentLanguage': content_language,
-            'b2Expires': expires,
-            'b2CacheControl': cache_control,
-            'b2ContentEncoding': content_encoding,
-            'b2ContentType': content_type,
-            'serverSideEncryption': server_side_encryption
-        }
-        headers = {key: value for key, value in headers.items() if value is not None}
-
-        data = await self._http.download_file(
-            f'{account.download_url}/file/{bucket_name}/{file_name}',
-            headers=headers
+        data = await self._http.download_file_by_name(
+            file_name=file_name,
+            bucket_name=bucket_name,
+            content_disposition=content_disposition,
+            content_language=content_language,
+            expires=expires,
+            cache_control=cache_control,
+            content_encoding=content_encoding,
+            content_type=content_type,
+            server_side_encryption=server_side_encryption
         )
 
         return DownloadedFile.from_response(data[1], data[0])
