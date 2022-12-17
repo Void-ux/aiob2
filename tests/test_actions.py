@@ -1,19 +1,8 @@
-import asyncio
-import sys
 import os
 import pytest
 from pathlib import Path
 
 from aiob2 import Client
-
-# For local tests
-if sys.platform == "win32":
-    with open('C:\\Users\\MS1\\Desktop\\Projects\\aiob2\\tests\\.env', 'r') as file:
-        for row in file:
-            row = row.split('=')
-            os.environ[row[0]] = row[1].replace('\n', '')
-
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 path = Path(__file__).resolve().parent / 'payloads/test_image.jpg'
 bucket_id = os.environ['BUCKET_ID']
