@@ -4,10 +4,10 @@
 
 <p align="center">
     <a href="https://www.python.org/downloads/">
-        <img src="https://img.shields.io/pypi/pyversions/aiob2?style=for-the-badge" alt="Python Version">
+        <img src="https://img.shields.io/pypi/pyversions/aiob2?style=for-the-badge" alt="Python version">
     </a>
     <a href="https://github.com/Void-ux/aiob2/actions">
-        <img src="https://img.shields.io/github/workflow/status/Void-ux/aiob2/Build?style=for-the-badge" alt="Build">
+        <img src="https://img.shields.io/github/actions/workflow/status/Void-ux/aiob2/build.yaml?branch=master&style=for-the-badge" alt="Build status">
     </a>
     <a href="https://pypi.org/project/aiob2/">
         <img src="https://img.shields.io/pypi/v/aiob2?color=8BC34A&style=for-the-badge" alt="PyPi">
@@ -23,22 +23,26 @@ It will allow you to interact with your B2 bucket, it's files and anything else 
 
 __**NOTE:**__ This API wrapper is by no means *complete* and has many endpoints to cover, though the main ones have been covered (they will be listed below)
 
-# Installation
+## Installation
 
 ---
 
 aiob2 is compatible with Python 3.8+ (this is an estimate). To install aiob2, run the following command in your (virtual) environment.
+
 ```
 pip install aiob2
 ```
+
 Alternatively, for the latest though least stable version, you can download it from the GitHub repo:
+
 ```
 pip install git+https://github.com/Void-ux/aiob2.git
 ```
 
-# Usage
+## Usage
 
 ### Uploading
+
 ```python
 import aiohttp
 import asyncio
@@ -68,6 +72,7 @@ if __name__ == '__main__':
 ```
 
 And that's it! `upload_file()` returns a `File` object that neatly wraps everything Backblaze's API has provided us with. The `File` object has the following **attributes**:
+
 ```
 - account_id: str
 - action: str
@@ -84,6 +89,7 @@ And that's it! `upload_file()` returns a `File` object that neatly wraps everyth
 - server_side_encryption: dict
 - upload_timestamp: datetime.datetime
 ```
+
 You can visit the [bucket.py](https://github.com/Void-ux/aiob2/blob/master/aiob2/types.py#L15-L29) file to view the source code of this class.
 
 ### Deleting
@@ -92,14 +98,16 @@ You can visit the [bucket.py](https://github.com/Void-ux/aiob2/blob/master/aiob2
 # We can remove the boilerplate code and get straight to the method
 deleted_file = await client.delete_file(file_name='file_name', file_id='file_id')
 ```
+
 This will return a `DeletedFile` object, it has the following **attributes**:
+
 ```
 - name: str
 - id: str
 ```
 
-
 ### Downloading
+
 Downloading a file can be done either with the `name` or the `id` of it.
 
 ```python
@@ -109,7 +117,9 @@ downloaded_file = await client.download_file_by_name(file_name='file_name', buck
 ```python
 downloaded_file = await client.download_file_by_id(file_id='file_id')
 ```
+
 This will return a `DownloadedFile` object with the following attributes:
+
 ```
 - name: str
 - id: str
@@ -121,10 +131,11 @@ This will return a `DownloadedFile` object with the following attributes:
 - content_length: str
 - date: str
 ```
-**NOTE:** There are many kwargs you can provide when downloading a file, it's recommended to take a look at the source 
+
+**NOTE:** There are many kwargs you can provide when downloading a file, it's recommended to take a look at the source
 code to see if any can benefit you and your usecase.
 
-# License
+## License
 
 ---
 
