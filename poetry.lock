@@ -176,6 +176,14 @@ optional = false
 python-versions = ">=3.7"
 
 [[package]]
+name = "typing-extensions"
+version = "4.4.0"
+description = "Backported and Experimental Type Hints for Python 3.7+"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+
+[[package]]
 name = "yarl"
 version = "1.8.2"
 description = "Yet another URL library"
@@ -190,7 +198,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "7379b39f3a4be55b539587358bfa9c76bf0d9c949a1b9b2a8d32cf11df663b3f"
+content-hash = "d29a835fbb08fd98b4a8b3bd58ab65e1a445c8a2940e03caa6c1e671bc53e462"
 
 [metadata.files]
 aiohttp = []
@@ -209,4 +217,5 @@ pluggy = []
 pytest = []
 pytest-asyncio = []
 tomli = []
+typing-extensions = []
 yarl = []
