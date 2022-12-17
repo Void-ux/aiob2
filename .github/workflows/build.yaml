@@ -53,6 +53,6 @@ jobs:
           BUCKET_ID: ${{ secrets.BUCKET_ID }}
           BUCKET_NAME: ${{ secrets.BUCKET_NAME }}
           KEY_ID: ${{ secrets.KEY_ID }}
-          APP_ID: ${{ secrets.APP_ID }}
+          KEY: ${{ secrets.KEY }}
         run: |
           poetry run pytest
