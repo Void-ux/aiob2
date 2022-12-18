@@ -29,6 +29,8 @@ typing-extensions = "^4.4.0"
 speed = ["orjson"]
 
 [tool.poetry.dev-dependencies]
+furo = "^2022.12.7"
+sphinxcontrib-trio = "^1.1.2"
 
 [tool.pyright]
 typeCheckingVersion = "strict"
