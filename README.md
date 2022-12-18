@@ -47,93 +47,28 @@ pip install git+https://github.com/Void-ux/aiob2.git
 import aiohttp
 import asyncio
 
-from aiob2 import B2ConnectionInfo, Client
-
-# Construct our connection info
-conn_info = B2ConnectionInfo('key_id', 'app_id')
+from aiob2 import Client
 
 # Our image to upload to our bucket
 with open(r'C:\Users\MS1\Pictures\Camera Roll\IMG_5316.jpeg', 'rb') as file:
     data = file.read()
 
 async def main():
-    client = Client(conn_info)
-    file = await client.upload_file(
-        content_bytes=data,
-        content_type='image/jpeg',
-        file_name='test.jpg',
-        bucket_id='bucket_id',
-    )
-    await client.close()
+    async with Client('key_id', 'key') as client:
+        file = await client.upload_file(
+            content_bytes=data,
+            content_type='image/jpeg',
+            file_name='test.jpg',
+            bucket_id='bucket_id',
+        )
 
 
 if __name__ == '__main__':
     asyncio.run(main())
 ```
 
-And that's it! `upload_file()` returns a `File` object that neatly wraps everything Backblaze's API has provided us with. The `File` object has the following **attributes**:
-
-```
-- account_id: str
-- action: str
-- bucket_id: str
-- content_length: int
-- content_sha1: str
-- content_md5: str
-- content_type: str
-- id: str
-- info: dict
-- name: str
-- retention: dict
-- legal_hold: dict
-- server_side_encryption: dict
-- upload_timestamp: datetime.datetime
-```
-
-You can visit the [bucket.py](https://github.com/Void-ux/aiob2/blob/master/aiob2/types.py#L15-L29) file to view the source code of this class.
-
-### Deleting
-
-```python
-# We can remove the boilerplate code and get straight to the method
-deleted_file = await client.delete_file(file_name='file_name', file_id='file_id')
-```
-
-This will return a `DeletedFile` object, it has the following **attributes**:
-
-```
-- name: str
-- id: str
-```
-
-### Downloading
-
-Downloading a file can be done either with the `name` or the `id` of it.
-
-```python
-downloaded_file = await client.download_file_by_name(file_name='file_name', bucket_name='bucket_name')
-```
-
-```python
-downloaded_file = await client.download_file_by_id(file_id='file_id')
-```
-
-This will return a `DownloadedFile` object with the following attributes:
-
-```
-- name: str
-- id: str
-- content_sha1: str
-- upload_timestamp: datetime.datetime
-- accept_ranges: str
-- content: bytes
-- content_type: str
-- content_length: str
-- date: str
-```
-
-**NOTE:** There are many kwargs you can provide when downloading a file, it's recommended to take a look at the source
-code to see if any can benefit you and your usecase.
+And that's it! `upload_file()` returns a `File` object that neatly wraps everything Backblaze's API has provided us with.
+The `File` object's documentation can be found [here](https://aiob2.readthedocs.io/en/latest/pages/api.html#aiob2.File)
 
 ## License
 
