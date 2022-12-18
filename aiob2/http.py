@@ -237,6 +237,7 @@ class HTTPClient:
                     if route.path == '/b2_authorize_account':
                         raise Unauthorized(response, data)
                     if data['code'] in ('expired_auth_token', 'bad_auth_token'):
+                        self.refresh_headers = True
                         await self._authorize_account()
 
                         if route.path == '/b2_get_upload_url':
