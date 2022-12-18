@@ -13,6 +13,17 @@ __all__ = ('Client', )
 
 
 class Client:
+    """Represents an aiob2 Client that makes requests to Backblaze's B2 API.
+
+    Parameters
+    ----------
+    application_key_id: :class:`str`
+        The application key id to use for authentication.
+    application_key: :class:`str`
+        The application key to use for authentication.
+    session: Optional[:class:`aiohttp.ClientSession`]
+        An optional session to pass, otherwise one will be lazily created.
+    """
     def __init__(
         self,
         application_key_id: str,
