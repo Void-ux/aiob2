@@ -83,7 +83,7 @@ class Route:
 
 
 async def json_or_bytes(response: aiohttp.ClientResponse, route: Route) -> Union[Dict[str, Any], bytes]:
-    if route.path == '/b2api/v2/b2_download_file_by_id' or route.path.startswith('/file/') and response.ok:
+    if route.path == '/b2api/v2/b2_download_file_by_id' or route.path.startswith('/file/'):
         return await response.read()
     else:
         return await response.json()
@@ -187,8 +187,23 @@ class HTTPClient:
         response: UploadURLPayload = await self.request(route, headers=headers, params=params)
 
         return BucketUploadInfo(response['uploadUrl'], response['authorizationToken'])
+    
+    def _refresh_headers(self, route: Route, headers: Dict[str, Any], *, bucket_id: Optional[str]) -> Tuple[Route, Dict[str, Any]]:
+        if route.action == 'upload':
+            assert bucket_id is not None
+            upload_info = self._upload_urls[bucket_id]
+            headers['Authorization'] = upload_info.token
+            route = Route('POST', '', override_base=upload_info.url, action='upload')
+        elif route.action == 'download':
+            headers['Authorization'] = self._authorization_token
+            route = Route('GET', route.path, override_base=self._download_url, action='download', **route.parameters)
+        elif route.action == 'other':
+            headers['Authorization'] = self._authorization_token
+            route = Route('GET', route.path, override_base=self._api_url, action='other')
+    
+        return route, headers
 
-    async def request(self, route: Route, *, bucket_id: Optional[str] = None, **kwargs) -> Any:
+    async def request(self, route: Route, *, bucket_id: Optional[str] = None, **kwargs: Any) -> Any:
         if self._session is None:
             self._session = await self._generate_session()
 
@@ -198,20 +213,12 @@ class HTTPClient:
         headers: Dict[str, str] = kwargs.pop('headers')
         headers['User-Agent'] = self.user_agent
 
-        # authorize_account uses the app_id/key, which don't change
-        if self.refresh_headers and route.action != 'authorize_account':
-            if route.action == 'upload':
-                assert bucket_id is not None
-                upload_info = self._upload_urls[bucket_id]
-                headers['Authorization'] = upload_info.token
-                route = Route('POST', '', override_base=upload_info.url, action='upload')
-            elif route.action == 'download':
-                route = Route('GET', route.path, override_base=self._download_url, action='download', **route.parameters)
-            elif route.action == 'other':
-                headers['Authorization'] = self._authorization_token
-                route = Route('GET', route.path, override_base=self._api_url, action='other')
-
         for tries in range(5):
+            print(f'Route: {route.url}')
+            # authorize_account uses the app_id/key, which don't change
+            if self.refresh_headers and route.action != 'authorize_account':
+                route, headers = self._refresh_headers(route, headers, bucket_id=bucket_id)
+
             async with self._session.request(route.method, route.url, headers=headers, **kwargs) as response:
                 data = await json_or_bytes(response, route)
 
@@ -240,7 +247,7 @@ class HTTPClient:
                         self.refresh_headers = True
                         await self._authorize_account()
 
-                        if route.path == '/b2_get_upload_url':
+                        if route.action == 'upload':
                             assert bucket_id is not None
                             self._upload_urls[bucket_id] = await self._get_upload_url(bucket_id)
 
