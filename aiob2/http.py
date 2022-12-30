@@ -277,7 +277,7 @@ class HTTPClient:
 
         headers = {
             'Authorization': bucket_upload_info.token,
-            'X-Bz-File-Name': str(file_name),
+            'X-Bz-File-Name': file_name,
             'Content-Type': content_type,
             'X-Bz-Content-Sha1': hashlib.sha1(content_bytes).hexdigest()
         }
