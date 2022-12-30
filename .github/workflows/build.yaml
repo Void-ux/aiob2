@@ -42,7 +42,7 @@ jobs:
           PY_VER: "${{ matrix.python-version }}"
         run: |
           poetry env use "$PY_VER"
-          poetry install --only main --dev
+          poetry install
 
       - name: Check it imports
         run: |
