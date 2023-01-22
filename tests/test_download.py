@@ -25,7 +25,7 @@ class TestDownload:
         assert downloaded_file.content_disposition == 'inline; filename="foo.jpg"'
         assert downloaded_file.content_language == 'en, ru'
         assert downloaded_file.comments == {'foo': 'bar'}
-        assert downloaded_file.server_side_encryption == file.server_side_encryption
+        assert downloaded_file.server_side_encryption == file.server_side_encryption['algorithm']
 
         # Download (by id)
 
