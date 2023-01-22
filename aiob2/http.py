@@ -84,10 +84,10 @@ class Route:
 
 
 async def json_or_bytes(response: aiohttp.ClientResponse, route: Route) -> Union[Dict[str, Any], bytes]:
-    if route.path == '/b2api/v2/b2_download_file_by_id' or route.path.startswith('/file/'):
-        return await response.read()
-    else:
+    if response.headers['Content-Type'].lower() in ('application/json;charset=utf-8', 'application/json'):
         return await response.json()
+    else:
+        return await response.read()
 
 
 class HTTPClient:
@@ -216,7 +216,7 @@ class HTTPClient:
         if headers['Authorization'] is MISSING and route.path != '/b2_authorize_account':
             await self._authorize_account()
             headers['Authorization'] = self._authorization_token
-            route = Route(route.method, route.path, base=self._api_url, parameters=route.parameters)
+            route = Route(route.method, route.path, base=self._api_url, **route.parameters)
 
         for tries in range(5):
             async with self._session.request(route.method, route.url, headers=headers, **kwargs) as response:
@@ -265,14 +265,14 @@ class HTTPClient:
                             log.debug('New upload URL: %s | New upload token: %s', route.url, headers['Authorization'])
 
                             log.info('Re-authenticated upload URL and upload URL token')
-
-                            continue
                         else:
-                            # download_by_file_id also uses the account authorization token
+                            # download_by_file_x also uses the account authorization token
                             await self._authorize_account()
                             headers['Authorization'] = self._authorization_token
+                    else:
+                        raise Unauthorized(response, data)
 
-                        continue
+                    continue
 
                 if response.status == 403:
                     raise Forbidden(response, data)
