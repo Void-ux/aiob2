@@ -6,8 +6,10 @@ import base64
 import hashlib
 import sys
 import logging
-from typing import TYPE_CHECKING, TypeVar, Coroutine, NamedTuple, TypedDict, Union, Optional, Literal, Tuple, Dict, Any
-from urllib.parse import quote as _uriquote
+import datetime
+import re
+from typing import TYPE_CHECKING, TypeVar, Coroutine, NamedTuple, TypedDict, Union, Optional, Literal, Tuple, List, Dict, Any
+from urllib.parse import quote, quote_plus
 
 from yarl import URL
 
@@ -75,7 +77,7 @@ class Route:
         self.parameters = parameters
         url = (base or self.BASE) + self.path
         if parameters:
-            url = url.format_map({k: _uriquote(v) if isinstance(v, str) else v for k, v in self.parameters.items()})
+            url = url.format_map({k: quote(v) if isinstance(v, str) else v for k, v in self.parameters.items()})
 
         self.url: URL = URL(url, encoded=True)
 
@@ -214,17 +216,15 @@ class HTTPClient:
         # only b2_upload_file and b2_upload_part use custom tokens, which must first
         # go through b2_get_upload_(part_)url, so they can't be the first request.
         if headers['Authorization'] is MISSING and route.path != '/b2_authorize_account':
-            logging.info('Authenticating using static application key')
+            log.info('Authenticating using static application key')
             await self._authorize_account()
-            logging.debug('Logged in with account ID %s', self._account_id)
+            log.debug('Logged in with account ID %s', self._account_id)
             headers['Authorization'] = self._authorization_token
             route = Route(route.method, route.path, base=self._api_url, **route.parameters)
 
         for tries in range(5):
             async with self._session.request(route.method, route.url, headers=headers, **kwargs) as response:
-                if bucket_id is None:
-                    log.debug('%s %s with %s has returned %s', route.method, route.url, kwargs.get('data'), response.status)
-                else:
+                if bucket_id is not None:
                     log.debug(
                         '%s %s with a payload of %s bytes has returned %s',
                         route.method,
@@ -237,7 +237,6 @@ class HTTPClient:
                 if 300 > response.status >= 200:
                     # for download_file_by_x; the headers contain info about the files
                     if isinstance(data, bytes):
-                        log.debug('%s %s')
                         return data, response.headers
                     return data
 
@@ -310,24 +309,56 @@ class HTTPClient:
                     raise HTTPException(response, data)
 
     async def upload_file(
-            self,
-            *,
-            content_bytes: bytes,
-            content_type: str,
-            file_name: str,
-            bucket_id: str
+        self,
+        *,
+        file_name: str,
+        content_bytes: bytes,
+        bucket_id: str,
+        content_type: Optional[str],
+        content_disposition: Optional[str],
+        content_language: Optional[List[str]],
+        expires: Optional[datetime.datetime],
+        content_encoding: Optional[List[Literal['gzip', 'compress', 'deflate', 'identity']]],
+        comments: Optional[Dict[str, str]],
+        upload_timestamp: Optional[datetime.datetime],
+        server_side_encryption: Optional[Literal['AES256']]
     ) -> Response[UploadPayload]:
         bucket_upload_info = self._upload_urls.get(bucket_id)
         if bucket_upload_info is None:
             bucket_upload_info = await self._get_upload_url(bucket_id)
             self._upload_urls[bucket_id] = bucket_upload_info
 
-        headers = {
+        headers: Dict[str, Union[str, int]] = {
             'Authorization': bucket_upload_info.token,
             'X-Bz-File-Name': file_name,
-            'Content-Type': content_type,
+            'Content-Type': content_type or 'b2/x-auto',
             'X-Bz-Content-Sha1': hashlib.sha1(content_bytes).hexdigest()
         }
+        if content_disposition:
+            reg = re.compile(r'(?P<display>inline|attachment)(?:\s*;\s*filename="(?P<filename>.*)?")?')
+            assert reg.search(content_disposition), 'The content_disposition header must be valid, see MDN docs'
+            headers['X-Bz-Info-b2-content-disposition'] = quote(content_disposition)
+        if content_language:
+            headers['X-Bz-Info-b2-content-language'] = quote(', '.join(content_language))
+        if expires:
+            date = expires.astimezone(datetime.timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
+            headers['X-Bz-Info-b2-expires'] = quote(date)
+        if content_encoding:
+            headers['X-Bz-Info-b2-content-encoding'] = quote(', '.join(content_encoding))
+        if comments:
+            key, value = list(comments.items())[0]
+            headers[f'X-Bz-Info-{quote_plus(key)}'] = quote(value.encode('utf-8'))
+        # Backblaze allows future dates for some accounts,
+        # so pre-checking it isn't viable
+        if upload_timestamp:
+            timestamp = int(upload_timestamp.timestamp() * 1000)
+            assert timestamp.bit_length() <= 64, \
+                'The upload timestamp must be 64 bits when turned into a UNIX timestamp in milliseconds.'
+            headers['X-Bz-Custom-Upload-Timestamp'] = str(timestamp)
+        if server_side_encryption:
+            assert server_side_encryption == 'AES256', 'Backblaze currently only supports AES256 server-side encryption'
+            headers['X-Bz-Server-Side-Encryption'] = server_side_encryption
+
         route = Route('POST', '', base=bucket_upload_info.url)
         return self.request(route, bucket_id=bucket_id, headers=headers, data=content_bytes)
 
@@ -343,16 +374,16 @@ class HTTPClient:
         return self.request(route, headers=headers, params=params)
 
     def download_file_by_id(
-            self,
-            *,
-            file_id: str,
-            content_disposition: Optional[str] = None,
-            content_language: Optional[str] = None,
-            expires: Optional[str] = None,
-            cache_control: Optional[str] = None,
-            content_encoding: Optional[str] = None,
-            content_type: Optional[str] = None,
-            server_side_encryption: Optional[str] = None
+        self,
+        *,
+        file_id: str,
+        content_disposition: Optional[str] = None,
+        content_language: Optional[str] = None,
+        expires: Optional[str] = None,
+        cache_control: Optional[str] = None,
+        content_encoding: Optional[str] = None,
+        content_type: Optional[str] = None,
+        server_side_encryption: Optional[str] = None
     ) -> Response[Tuple[bytes, Dict[str, Any]]]:
         headers = {
             'Authorization': self._authorization_token,
@@ -377,17 +408,17 @@ class HTTPClient:
         return self.request(route, headers=headers, params=params)
 
     def download_file_by_name(
-            self,
-            *,
-            file_name: str,
-            bucket_name: str,
-            content_disposition: Optional[str] = None,
-            content_language: Optional[str] = None,
-            expires: Optional[str] = None,
-            cache_control: Optional[str] = None,
-            content_encoding: Optional[str] = None,
-            content_type: Optional[str] = None,
-            server_side_encryption: Optional[str] = None
+        self,
+        *,
+        file_name: str,
+        bucket_name: str,
+        content_disposition: Optional[str] = None,
+        content_language: Optional[str] = None,
+        expires: Optional[str] = None,
+        cache_control: Optional[str] = None,
+        content_encoding: Optional[str] = None,
+        content_type: Optional[str] = None,
+        server_side_encryption: Optional[str] = None
     ) -> Response[Tuple[bytes, Dict[str, Any]]]:
         headers = {
             'Authorization': self._authorization_token,
