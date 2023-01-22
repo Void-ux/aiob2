@@ -2,6 +2,7 @@ import os
 import pytest
 import uuid
 import logging
+import datetime
 from pathlib import Path
 
 from aiob2 import Client
@@ -19,15 +20,24 @@ class TestUpload:
         file_name = str(uuid.uuid4())
 
         file = await client.upload_file(
-            content_bytes=path.read_bytes(),
-            content_type='image/jpeg',
             file_name=file_name,
+            content_bytes=path.read_bytes(),
             bucket_id=bucket_id,
+            content_type='image/jpeg',
+            content_disposition='inline; filename="foo.jpg"',
+            content_language=['en', 'ru'],
+            expires=datetime.datetime.now() + datetime.timedelta(minutes=5),
+            comments={'foo': 'bar'},
+            server_side_encryption='AES256'
         )
 
         assert file.name == file_name
         assert file.bucket_id == bucket_id
         assert file.content_type == 'image/jpeg'
+        assert file.server_side_encryption == 'AES256'
+
+        # some more tests relating to this will be performed in the download,
+        # such as, the disposition, language, expires and comments.
 
         ValueStorage.test_upload_file = file
 
