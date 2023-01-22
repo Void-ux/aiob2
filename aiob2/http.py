@@ -214,18 +214,30 @@ class HTTPClient:
         # only b2_upload_file and b2_upload_part use custom tokens, which must first
         # go through b2_get_upload_(part_)url, so they can't be the first request.
         if headers['Authorization'] is MISSING and route.path != '/b2_authorize_account':
+            logging.info('Authenticating using static application key')
             await self._authorize_account()
+            logging.debug('Logged in with account ID %s', self._account_id)
             headers['Authorization'] = self._authorization_token
             route = Route(route.method, route.path, base=self._api_url, **route.parameters)
 
         for tries in range(5):
             async with self._session.request(route.method, route.url, headers=headers, **kwargs) as response:
-                log.debug('%s %s has returned %s', route.method, route.url, response.status)
+                if bucket_id is None:
+                    log.debug('%s %s with %s has returned %s', route.method, route.url, kwargs.get('data'), response.status)
+                else:
+                    log.debug(
+                        '%s %s with a payload of %s bytes has returned %s',
+                        route.method,
+                        route.url,
+                        len(kwargs['data']),
+                        response.status
+                    )
                 data = await json_or_bytes(response, route)
 
                 if 300 > response.status >= 200:
                     # for download_file_by_x; the headers contain info about the files
                     if isinstance(data, bytes):
+                        log.debug('%s %s')
                         return data, response.headers
                     return data
 
@@ -244,6 +256,14 @@ class HTTPClient:
                     if response.status == 503 and bucket_id is not None:
                         pass
                     else:
+                        log.warning(
+                            '%s %s returned %s (%s), sleeping for %s',
+                            route.method,
+                            route.url,
+                            response.status,
+                            data['code'],
+                            1 + tries * 2
+                        )
                         await asyncio.sleep(1 + tries * 2)
 
                 if response.status == 401 or (response.status == 503 and bucket_id is not None):
@@ -252,23 +272,29 @@ class HTTPClient:
 
                     # (auth token has expired, auth token was not valid to begin with, internal server error i.e. 503)
                     if data['code'] in ('expired_auth_token', 'bad_auth_token', 'service_unavailable'):
-                        log.info('%s %s has returned %s (%s), attempting to re-authenticate', route.method, route.url, response.status, data['code'])  # noqa
+                        log.info(
+                            '%s %s has returned %s (%s), most likely because it expired, attempting to re-authenticate',
+                            route.method,
+                            route.url,
+                            response.status,
+                            data['code']
+                        )
 
                         # this means we're uploading a file (b2_upload_file)
                         if bucket_id is not None:
                             assert bucket_id is not None
-                            log.debug('Previous upload URL: %s | Previous upload token: %s', route.url, headers['Authorization'])  # noqa
                             bucket_info = self._upload_urls[bucket_id] = await self._get_upload_url(bucket_id)
                             # reset the upload URL and token and retry
                             headers['Authorization'] = bucket_info.token
                             route = Route(route.method, route.path, base=bucket_info.url, parameters=route.parameters)
-                            log.debug('New upload URL: %s | New upload token: %s', route.url, headers['Authorization'])
 
                             log.info('Re-authenticated upload URL and upload URL token')
                         else:
                             # download_by_file_x also uses the account authorization token
                             await self._authorize_account()
                             headers['Authorization'] = self._authorization_token
+
+                            log.info('Re-authenticated account authorization token')
                     else:
                         raise Unauthorized(response, data)
 
