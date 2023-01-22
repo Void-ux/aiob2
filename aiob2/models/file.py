@@ -37,7 +37,12 @@ DownloadPayloadHeaders = TypedDict('DownloadPayloadHeaders', {
     'X-Bz-Content-Sha1': str,
     'X-Bz-Upload-Timestamp': str,
     'Accept-Ranges': str,
-    'Date': str
+    'Date': str,
+    'Content-Disposition': NotRequired[str],
+    'Content-Language': NotRequired[str],
+    'Expires': NotRequired[str],
+    'Content-Encoding': NotRequired[str],
+    'X-Bz-Server-Side-Encryption': NotRequired[Literal['AES256']]
 })
 
 
@@ -169,22 +174,61 @@ class DownloadedFile(B2Object):
         The time at which the file was uploaded.
     downloaded_at: :class:`str`
         The date at which the download was requested.
+    content_disposition: Optional[:class:`str`]
+        Whether or not the content is intended to be played inline, or downloaded locally and optionally the filename.
+    content_language: Optional[:class:`str`]
+        The content's intended language audience.
+    expires: Optional[:class:`datetime.datetime`]
+        The intended expiration date of the content.
+    content_encoding: Optional[:class:`str`]
+        The content's encoding in the order they were performed in.
+    server_side_encryption: Optional[Literal[``AES256``]]
+        The server side encryption performed on the content including the algorithm.
+    comments: Optional[Dict[:class:`str`, :class:`str`]]
+        The comments uploaded with the file.
     content: :class:`bytes`
         The raw bytes of the downloaded file.
     """
     def __init__(
         self,
         content: bytes,
-        headers: DownloadPayloadHeaders
+        headers_: DownloadPayloadHeaders
     ):
-        self.content_length: int = headers['Content-Length']
-        self.content_type: str = headers['Content-Type']
-        self.id: str = headers['X-Bz-File-Id']
-        self.name: str = headers['X-Bz-File-Name']
-        self.content_sha1: str = headers['X-Bz-Content-Sha1']
-        self.created: datetime.datetime = format_timestamp(int(headers['X-Bz-Upload-Timestamp']))
+        headers: Dict[str, Any] = {k.lower(): v for k, v in headers_.items()}
+        b2_info_headers = (
+            'b2-content-disposition',
+            'b2-content-language',
+            'b2-expires',
+            'b2-cache-control',
+            'b2-content-encoding',
+            'b2-content-type'
+        )
+        # comments are turned to lower case by Backblaze
+        # so the above lowercasing won't impact anything
+        comments: Dict[str, str] = {
+            k[10:]: v for k, v in headers.items() if k.startswith('x-bz-info-') and not k.endswith(b2_info_headers)
+        }
+
+        self.content_length: int = headers['content-length']
+        self.content_type: str = headers['content-type']
+        self.id: str = headers['x-bz-file-id']
+        self.name: str = headers['x-bz-file-name']
+        self.content_sha1: str = headers['x-bz-content-sha1']
+        self.created: datetime.datetime = format_timestamp(int(headers['x-bz-upload-timestamp']))
         self.downloaded_at: datetime.datetime = datetime.datetime.strptime(
-            headers['Date'],
+            headers['date'],
             '%a, %d %b %Y %H:%M:%S %Z'
         )
+
+        self.content_disposition: Optional[str] = headers.get('content-disposition')
+        self.content_language: Optional[str] = headers.get('content-language')
+        if (expires := headers.get('cache-control')) is not None:
+            expires = datetime.datetime.strptime(expires, '%a, %d %b %Y %H:%M:%S %Z')
+        else:
+            expires = None
+        self.expires: Optional[datetime.datetime] = expires
+        self.content_encoding: Optional[str] = headers.get('content-encoding')
+        self.server_side_encryption: Optional[Literal['AES256']] = headers.get('x-bz-server-side-encryption')
+        self.comments: Optional[Dict[str, str]] = comments or None
+
         self.content: bytes = content
