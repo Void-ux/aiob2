@@ -1,5 +1,5 @@
 import datetime
-from typing import TypedDict, Literal, Optional, Union
+from typing import TypedDict, Literal, Optional, Union, Dict, Any
 from typing_extensions import NotRequired
 
 from .archetypes import B2Object
@@ -21,11 +21,11 @@ class UploadPayload(PartialFilePayload):
     contentSha1: Optional[str]
     contentMd5: NotRequired[Optional[str]]
     contentType: Optional[str]
-    fileInfo: dict
-    fileRetention: NotRequired[Optional[dict]]
-    legalHold: NotRequired[dict]
+    fileInfo: Dict[Any, Any]
+    fileRetention: NotRequired[Optional[Dict[Any, Any]]]
+    legalHold: NotRequired[Dict[Any, Any]]
     replicationStatus: NotRequired[Literal['PENDING', 'COMPLETED', 'FAILED', 'REPLICA']]
-    serverSideEncryption: NotRequired[Optional[dict]]
+    serverSideEncryption: NotRequired[Optional[Dict[Any, Any]]]
     uploadTimestamp: Union[int, Literal[0]]
 
 
@@ -64,7 +64,7 @@ class PartialFile(B2Object):
     def __str__(self):
         return self.name
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any):
         if isinstance(other, File):
             return self.id == other.id
 
@@ -93,7 +93,7 @@ class File(PartialFile):
     id: :class:`str`
         The file's ID.
     info: :class:`dict`
-        Any info regarding the file submitted at upload.
+        Any custom info regarding the file submitted at upload.
     name: :class:`str`
         The file's name.
     retention: Optional[:class:`dict`]
@@ -125,11 +125,11 @@ class File(PartialFile):
         self.content_sha1: str = data['contentSha1']
         self.content_md5: Optional[str] = data.get('contentMd5')
         self.content_type: str = data['contentType']
-        self.info: dict = data['fileInfo']
-        self.retention: Optional[dict] = data.get('fileRetention')
-        self.legal_hold: Optional[dict] = data.get('legalHold')
+        self.info: Dict[Any, Any] = data['fileInfo']
+        self.retention: Optional[Dict[Any, Any]] = data.get('fileRetention')
+        self.legal_hold: Optional[Dict[Any, Any]] = data.get('legalHold')
         self.replication_status: Optional[Literal['PENDING', 'COMPLETED', 'FAILED', 'REPLICA']] = data.get('replicationStatus')  # noqa
-        self.server_side_encryption: Optional[dict] = data.get('serverSideEncryption')
+        self.server_side_encryption: Optional[Dict[Any, Any]] = data.get('serverSideEncryption')
         self.created: datetime.datetime = format_timestamp(data['uploadTimestamp'])
 
 
