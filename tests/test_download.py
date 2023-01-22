@@ -1,32 +1,21 @@
 import os
 import pytest
+import logging
 from pathlib import Path
 
-from aiob2 import Client
+from aiob2 import Client, File
+from .conftest import ValueStorage
 
 path = Path(__file__).resolve().parent / 'payloads/test_image.jpg'
-bucket_id = os.environ['BUCKET_ID']
 
 
-class TestB2Actions:
+class TestDownload:
     @pytest.mark.asyncio
-    async def test_actions(self):
-        client = Client(os.environ['KEY_ID'], os.environ['KEY'])
-
-        # Upload
-
-        file = await client.upload_file(
-            content_bytes=path.read_bytes(),
-            content_type='image/jpeg',
-            file_name='test.jpg',
-            bucket_id=bucket_id,
-        )
-
-        assert file.name == 'test.jpg'
-        assert file.bucket_id == bucket_id
-        assert file.content_type == 'image/jpeg'
-
-        # Download (by name)
+    @pytest.mark.order(3)
+    async def test_download(self):
+        client = Client(os.environ['KEY_ID'], os.environ['KEY'], log_level=logging.DEBUG)
+        file = ValueStorage.test_upload_file
+        assert isinstance(file, File)
 
         downloaded_file = await client.download_file_by_name(file_name=file.name, bucket_name=os.environ['BUCKET_NAME'])
 
@@ -43,12 +32,3 @@ class TestB2Actions:
         assert downloaded_file.id == file.id
         # assert downloaded_file.upload_timestamp == file.upload_timestamp
         assert downloaded_file.content == path.read_bytes()
-
-        # Delete
-
-        deleted_file = await client.delete_file(file_name=file.name, file_id=file.id)
-
-        assert deleted_file.name == file.name
-        assert deleted_file.id == file.id
-
-        await client.close()

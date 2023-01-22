@@ -3,6 +3,7 @@ tests/main.py
 .idea/
 discord.xml
 misc.xml
+tests/for_local.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
