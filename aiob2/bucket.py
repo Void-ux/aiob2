@@ -1,5 +1,6 @@
+import datetime
 import logging
-from typing import Optional, Any
+from typing import Optional, Literal, Dict, List, Any
 
 import aiohttp
 
@@ -76,26 +77,67 @@ class Client:
         if isinstance(self._http._session, aiohttp.ClientSession):  # type: ignore
             await self._http._session.close()  # type: ignore
 
+    # TODO add all possible options; overload for customer encryption?
     async def upload_file(
         self,
         *,
-        content_bytes: bytes,
-        content_type: str,
         file_name: str,
-        bucket_id: str
+        content_bytes: bytes,
+        bucket_id: str,
+        content_type: Optional[str] = None,
+        content_disposition: Optional[str] = None,
+        content_language: Optional[List[str]] = None,
+        expires: Optional[datetime.datetime] = None,
+        content_encoding: Optional[List[Literal['gzip', 'compress', 'deflate', 'identity']]] = None,
+        comments: Optional[Dict[str, str]] = None,
+        upload_timestamp: Optional[datetime.datetime] = None,
+        server_side_encryption: Optional[Literal['AES256']] = None
     ) -> File:
         """Uploads a file to a bucket.
 
         Parameters
         -----------
-        content_bytes: :class:`bytes`
-            The raw bytes of the file to be uploaded.
-        content_type: :class:`str`
-            The content type of the content_bytes, e.g. video/mp4.
         file_name: :class:`str`
             The name of the file.
+        content_bytes: :class:`bytes`
+            The raw bytes of the file to be uploaded.
         bucket_id: :class:`str`
             The ID of the bucket to upload to.
+        content_type: Optional[:class:`str`]
+            The content type of the content_bytes, e.g. video/mp4. This should be the original media/content,
+            and not the result of the encodings applied. This is specified in the ``content_encoding``.
+
+            B2's list of content types/extensions can be found [here](https://www.backblaze.com/b2/docs/content-types.html)
+
+            If not provided, it will be automatically detected by Backblaze, and upon it not being discoverable, it'll
+            default to ``application/octet-stream``.
+        content_disposition: Optional[:class:`str`]
+            Indicates whether the content is displayed inline in the browser, or as an attachment, which is
+            locally downloaded.
+
+            More info: [MDN Docs](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition)
+        content_language: Optional[List[:class:`str`]]
+            The intended language(s) for the audience. By default, when this is not specified, it indicates
+            that the content is for all language audiences.
+
+            For example, ``['en']`` (English) or ``['en', 'da']`` (English and Danish).
+        expires: Optional[:class:`datetime.datetime`]
+            Indicates the date/time after which the content is considered expired. This does NOT automatically delete the
+            file.
+        content_encoding: Optional[List[Literal[``gzip``, ``compress``, ``deflate``, ``identity``]]]
+            Lists any encodings that have been applied to the content, and in what order.
+        comments: Optional[Dict[:class:`str`, :class:`str`]]
+            A key-value pair of strings denoting any extra information to store as metadata with the file.
+            The key will be ``quote_plus`` encoded.
+        upload_timestamp: Optional[datetime.datetime]
+            The upload timestamp to use, instead of now.
+
+            .. note ::
+                Your account must be authorized to use this by Backblaze support.
+        server_side_encryption: Optional[Literal[`AES256`]]
+            Specifying this will encrypt the data before storing it using
+            [Server-Side Encryption with Backblaze-Managed Keys](https://backblaze.com/b2/docs/server_side_encryption.html)
+            with the specified algorithm, currently only ``AES256``.
 
         Returns
         ---------
@@ -107,7 +149,14 @@ class Client:
             content_bytes=content_bytes,
             content_type=content_type,
             file_name=file_name,
-            bucket_id=bucket_id
+            bucket_id=bucket_id,
+            content_disposition=content_disposition,
+            content_language=content_language,
+            expires=expires,
+            content_encoding=content_encoding,
+            comments=comments,
+            upload_timestamp=upload_timestamp,
+            server_side_encryption=server_side_encryption
         ))
         return File(data)
 
