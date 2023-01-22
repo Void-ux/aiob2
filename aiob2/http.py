@@ -5,6 +5,7 @@ import asyncio
 import base64
 import hashlib
 import sys
+import logging
 from typing import TYPE_CHECKING, TypeVar, Coroutine, NamedTuple, TypedDict, Union, Optional, Literal, Tuple, Dict, Any
 from urllib.parse import quote as _uriquote
 
@@ -26,10 +27,11 @@ if TYPE_CHECKING:
     T = TypeVar('T')
     Response = Coroutine[Any, Any, T]
 
-HTTPVerb = Literal['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
-
-
 __all__ = ('HTTPClient', )
+
+log = logging.getLogger(__name__)
+
+HTTPVerb = Literal['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
 
 
 class UploadURLPayload(TypedDict):
@@ -52,10 +54,8 @@ class Route:
         The HTTP method you wish to perform, e.g. ``"POST"``
     path: :class:`str`
         The prepended path to the API endpoint you with to target. e.g. ``"/b2_authorize_account"``
-    override_base: Optional[:class:`str`]
-        The URL to override the base with. Useful for the download/upload Backblaze routes.
-    action: :class:`str`
-        The action being performed, used to tell which parts of the header to re-generate upon expiration.
+    base: Optional[:class:`str`]
+        The URL to override the base with. Useful for the b2_download_file_by_name/b2_upload_file Backblaze routes.
     parameters: Any
         This is a special cased kwargs. Anything passed to these will substitute it's key to value in the `path`.
     """
@@ -67,19 +67,20 @@ class Route:
         method: Literal['GET', 'POST', 'PUT', 'DELETE'],
         path: str,
         *,
-        override_base: Optional[str] = None,
-        action: Literal['upload', 'download', 'authorize_account', 'other'],
+        base: Optional[str] = None,
         **parameters: Any
     ) -> None:
-        self.method = method
+        self.method: Literal['GET', 'POST', 'PUT', 'DELETE'] = method
         self.path = path
         self.parameters = parameters
-        url = (override_base or self.BASE) + self.path
+        url = (base or self.BASE) + self.path
         if parameters:
             url = url.format_map({k: _uriquote(v) if isinstance(v, str) else v for k, v in self.parameters.items()})
 
-        self.action = action
         self.url: URL = URL(url, encoded=True)
+
+    def __repr__(self) -> str:
+        return f'{self.method} {str(self.url)}'
 
 
 async def json_or_bytes(response: aiohttp.ClientResponse, route: Route) -> Union[Dict[str, Any], bytes]:
@@ -151,7 +152,7 @@ class HTTPClient:
             'Authorization': basic_auth_string
         }
 
-        route = Route('GET', '/b2_authorize_account', action='authorize_account')
+        route = Route('GET', '/b2_authorize_account')
         response: AccountAuthorizationPayload = await self.request(route, headers=headers)
 
         self._account_id: str = response['accountId']
@@ -168,16 +169,16 @@ class HTTPClient:
 
         Parameters
         -----------
-        bucket_id: str
+        bucket_id: :class:`str`
             The ID of the bucket to get the upload info for.
 
         Returns
         ---------
-        BucketUploadInfo
+        :class:`BucketUploadInfo`
             The URL for uploading files, and the authorization token to use with it.
         """
 
-        route = Route('GET', '/b2api/v2/b2_get_upload_url', override_base=self._api_url, action='other')
+        route = Route('GET', '/b2api/v2/b2_get_upload_url', base=self._api_url)
         headers = {
             'Authorization': self._authorization_token
         }
@@ -187,50 +188,50 @@ class HTTPClient:
         response: UploadURLPayload = await self.request(route, headers=headers, params=params)
 
         return BucketUploadInfo(response['uploadUrl'], response['authorizationToken'])
-    
-    def _refresh_headers(self, route: Route, headers: Dict[str, Any], *, bucket_id: Optional[str]) -> Tuple[Route, Dict[str, Any]]:
-        if route.action == 'upload':
-            assert bucket_id is not None
-            upload_info = self._upload_urls[bucket_id]
-            headers['Authorization'] = upload_info.token
-            route = Route('POST', '', override_base=upload_info.url, action='upload')
-        elif route.action == 'download':
-            headers['Authorization'] = self._authorization_token
-            route = Route('GET', route.path, override_base=self._download_url, action='download', **route.parameters)
-        elif route.action == 'other':
-            headers['Authorization'] = self._authorization_token
-            route = Route('GET', route.path, override_base=self._api_url, action='other')
-    
-        return route, headers
 
     async def request(self, route: Route, *, bucket_id: Optional[str] = None, **kwargs: Any) -> Any:
+        """Send a HTTP request to the `route.url`, with HTTP error code handling defined by the B2 API docs.
+
+        Parameters
+        ----------
+        route: :class:`Route`
+            The HTTP method and URL.
+        bucket_id: Optional[:class:`str`]
+            The bucket ID being uploaded to, only specified when called from `HTTPClient.upload_file`.
+        **kwargs: Any
+            kwargs to pass to `aiohttp.ClientSession.request()`, any of `headers`, `params`, `data`, `json`.
+        """
+
         if self._session is None:
             self._session = await self._generate_session()
-
-        if self._account_id is MISSING and route.path != '/b2_authorize_account':  # prevent recursion death loop
-            await self._authorize_account()
 
         headers: Dict[str, str] = kwargs.pop('headers')
         headers['User-Agent'] = self.user_agent
 
-        for tries in range(5):
-            print(f'Route: {route.url}')
-            # authorize_account uses the app_id/key, which don't change
-            if self.refresh_headers and route.action != 'authorize_account':
-                route, headers = self._refresh_headers(route, headers, bucket_id=bucket_id)
+        # this will only ever happen on the very first self.request
+        # luckily, the first route will always use the account authorization
+        # token, e.g. b2_get_upload_url, download_file_by_x, etc.
+        # only b2_upload_file and b2_upload_part use custom tokens, which must first
+        # go through b2_get_upload_(part_)url, so they can't be the first request.
+        if headers['Authorization'] is MISSING and route.path != '/b2_authorize_account':
+            await self._authorize_account()
+            headers['Authorization'] = self._authorization_token
+            route = Route(route.method, route.path, base=self._api_url, parameters=route.parameters)
 
+        for tries in range(5):
             async with self._session.request(route.method, route.url, headers=headers, **kwargs) as response:
+                log.debug('%s %s has returned %s', route.method, route.url, response.status)
                 data = await json_or_bytes(response, route)
 
                 if 300 > response.status >= 200:
-                    if route.path != '/b2_authorize_account':
-                        self.refresh_headers = False
+                    # for download_file_by_x; the headers contain info about the files
                     if isinstance(data, bytes):
                         return data, response.headers
                     return data
 
                 # appease type checker; json_or_bytes will
-                # only return bytes if response.ok
+                # only return bytes if response.ok which'll
+                # be handled in the `if` statement above
                 assert isinstance(data, dict)
 
                 # we are being rate limited
@@ -238,20 +239,40 @@ class HTTPClient:
                     raise RateLimited(response, data)
 
                 if response.status in {408, 500, 503}:
-                    await asyncio.sleep(1 + tries * 2)
+                    # Backblaze recommends calling b2_get_upload_url again
+                    # this wasn't shortened into a single 'if' to preserve readability
+                    if response.status == 503 and bucket_id is not None:
+                        pass
+                    else:
+                        await asyncio.sleep(1 + tries * 2)
 
-                if response.status == 401:
+                if response.status == 401 or (response.status == 503 and bucket_id is not None):
                     if route.path == '/b2_authorize_account':
                         raise Unauthorized(response, data)
-                    if data['code'] in ('expired_auth_token', 'bad_auth_token'):
-                        self.refresh_headers = True
-                        await self._authorize_account()
 
-                        if route.action == 'upload':
+                    # (auth token has expired, auth token was not valid to begin with, internal server error i.e. 503)
+                    if data['code'] in ('expired_auth_token', 'bad_auth_token', 'service_unavailable'):
+                        log.info('%s %s has returned %s (%s), attempting to re-authenticate', route.method, route.url, response.status, data['code'])  # noqa
+
+                        # this means we're uploading a file (b2_upload_file)
+                        if bucket_id is not None:
                             assert bucket_id is not None
-                            self._upload_urls[bucket_id] = await self._get_upload_url(bucket_id)
+                            log.debug('Previous upload URL: %s | Previous upload token: %s', route.url, headers['Authorization'])  # noqa
+                            bucket_info = self._upload_urls[bucket_id] = await self._get_upload_url(bucket_id)
+                            # reset the upload URL and token and retry
+                            headers['Authorization'] = bucket_info.token
+                            route = Route(route.method, route.path, base=bucket_info.url, parameters=route.parameters)
+                            log.debug('New upload URL: %s | New upload token: %s', route.url, headers['Authorization'])
 
-                    continue  # note: this may retry an extra pointless 3 times
+                            log.info('Re-authenticated upload URL and upload URL token')
+
+                            continue
+                        else:
+                            # download_by_file_id also uses the account authorization token
+                            await self._authorize_account()
+                            headers['Authorization'] = self._authorization_token
+
+                        continue
 
                 if response.status == 403:
                     raise Forbidden(response, data)
@@ -281,11 +302,11 @@ class HTTPClient:
             'Content-Type': content_type,
             'X-Bz-Content-Sha1': hashlib.sha1(content_bytes).hexdigest()
         }
-        route = Route('POST', '', override_base=bucket_upload_info.url, action='upload')
+        route = Route('POST', '', base=bucket_upload_info.url)
         return self.request(route, bucket_id=bucket_id, headers=headers, data=content_bytes)
 
     def delete_file(self, *, file_name: str, file_id: str) -> Response[PartialFilePayload]:
-        route = Route('GET', '/b2api/v2/b2_delete_file_version', override_base=self._api_url, action='other')
+        route = Route('GET', '/b2api/v2/b2_delete_file_version', base=self._api_url)
         headers = {
             'Authorization': self._authorization_token
         }
@@ -324,8 +345,7 @@ class HTTPClient:
         route = Route(
             'GET',
             '/b2api/v2/b2_download_file_by_id',
-            override_base=self._download_url,
-            action='download'
+            base=self._download_url
         )
 
         return self.request(route, headers=headers, params=params)
@@ -357,10 +377,9 @@ class HTTPClient:
         route = Route(
             'GET',
             '/file/{bucket_name}/{file_name}',
-            override_base=self._download_url,
+            base=self._download_url,
             bucket_name=bucket_name,
-            file_name=file_name,
-            action='download'
+            file_name=file_name
         )
 
         return self.request(route, headers=headers)
