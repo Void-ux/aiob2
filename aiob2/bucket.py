@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, Any
 
 import aiohttp
@@ -8,6 +9,7 @@ from .models import (
     DownloadedFile
 )
 from .http import HTTPClient
+from .utils import setup_logging, MISSING
 
 __all__ = ('Client', )
 
@@ -23,15 +25,45 @@ class Client:
         The application key to use for authentication.
     session: Optional[:class:`aiohttp.ClientSession`]
         An optional session to pass, otherwise one will be lazily created.
+    logging_handler: Optional[:class:`logging.LogHandler`]
+        The log handler to use for the library's logger. If this is ``None``
+        then the library will not set up anything logging related. Logging
+        will still work if ``None`` is passed, though it is your responsibility
+        to set it up.
+
+        The default log handler if not provided is :class:`logging.StreamHandler`.
+    log_formatter: :class:`logging.Formatter`
+        The formatter to use with the given log handler. If not provided then it
+        defaults to a colour based logging formatter (if available).
+    log_level: :class:`int`
+        The default log level for the library's logger. This is only applied if the
+        ``log_handler`` parameter is not ``None``. Defaults to ``logging.INFO``.
+    root_logger: :class:`bool`
+        Whether to set up the root logger rather than the library logger.
+        By default, only the library logger (``'aiob2'``) is set up. If this
+        is set to ``True`` then the root logger is set up as well.
+
+        Defaults to ``False``.
     """
     def __init__(
         self,
         application_key_id: str,
         application_key: str,
         *,
-        session: Optional[aiohttp.ClientSession] = None
+        session: Optional[aiohttp.ClientSession] = None,
+        log_handler: Optional[logging.Handler] = MISSING,
+        log_formatter: logging.Formatter = MISSING,
+        log_level: int = MISSING,
+        root_logger: bool = False
     ):
         self._http = HTTPClient(application_key_id, application_key, session)
+        if log_handler is not None:
+            setup_logging(
+                handler=log_handler,
+                formatter=log_formatter,
+                level=log_level,
+                root=root_logger
+            )
 
     async def __aenter__(self):
         return self
@@ -41,8 +73,8 @@ class Client:
 
     async def close(self):
         # This is really only possible if a Client is instantiated and no request is ever made
-        if isinstance(self._http._session, aiohttp.ClientSession):
-            await self._http._session.close()
+        if isinstance(self._http._session, aiohttp.ClientSession):  # type: ignore
+            await self._http._session.close()  # type: ignore
 
     async def upload_file(
         self,
