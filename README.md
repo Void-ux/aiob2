@@ -21,7 +21,7 @@ aiob2 is an asynchronous API wrapper for the [Backblaze B2 Bucket API](https://w
 
 It will allow you to interact with your B2 bucket, it's files and anything else that the B2 API allows in a modern, object-oriented fashion.
 
-__**NOTE:**__ This API wrapper is by no means *complete* and has many endpoints to cover, though the main ones have been covered (they will be listed below)
+**NOTE:** This API wrapper is by no means *complete* and has many endpoints to cover, though the main ones have been covered (they will be listed below)
 
 ## Installation
 
@@ -29,13 +29,13 @@ __**NOTE:**__ This API wrapper is by no means *complete* and has many endpoints 
 
 aiob2 is compatible with Python 3.8+ (this is an estimate). To install aiob2, run the following command in your (virtual) environment.
 
-```
+```shell
 pip install aiob2
 ```
 
 Alternatively, for the latest though least stable version, you can download it from the GitHub repo:
 
-```
+```shell
 pip install git+https://github.com/Void-ux/aiob2.git
 ```
 
@@ -57,7 +57,6 @@ async def main():
     async with Client('key_id', 'key') as client:
         file = await client.upload_file(
             content_bytes=data,
-            content_type='image/jpeg',
             file_name='test.jpg',
             bucket_id='bucket_id',
         )
