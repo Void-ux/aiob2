@@ -34,7 +34,7 @@ class TestUpload:
         assert file.name == file_name
         assert file.bucket_id == bucket_id
         assert file.content_type == 'image/jpeg'
-        assert file.server_side_encryption == 'AES256'
+        assert file.server_side_encryption['algorithm'] == 'AES256'  # type: ignore
 
         # some more tests relating to this will be performed in the download,
         # such as, the disposition, language, expires and comments.
