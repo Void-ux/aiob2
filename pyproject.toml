@@ -26,7 +26,6 @@ classifiers = [
 python = "^3.8"
 aiohttp = "^3.8.1"
 typing-extensions = "^4.4.0"
-pytest-order = "^1.0.1"
 
 [tool.poetry.extras]
 speed = ["orjson"]
@@ -35,6 +34,7 @@ speed = ["orjson"]
 pytest-asyncio = "^0.19.0"
 furo = "^2022.12.7"
 sphinxcontrib-trio = "^1.1.2"
+pytest-order = "^1.0.1"
 
 [tool.pyright]
 typeCheckingVersion = "strict"
