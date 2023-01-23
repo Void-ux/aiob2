@@ -330,7 +330,7 @@ class HTTPClient:
 
         headers: Dict[str, Union[str, int]] = {
             'Authorization': bucket_upload_info.token,
-            'X-Bz-File-Name': file_name,
+            'X-Bz-File-Name': quote(file_name),
             'Content-Type': content_type or 'b2/x-auto',
             'X-Bz-Content-Sha1': hashlib.sha1(content_bytes).hexdigest()
         }
