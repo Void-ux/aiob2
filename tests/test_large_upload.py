@@ -7,7 +7,7 @@ from pathlib import Path
 from aiob2 import Client
 from .conftest import ValueStorage
 
-path = Path(__file__).resolve().parent / 'payloads/test_image.jpg'
+path = Path(__file__).resolve().parent / 'payloads/test_video.mp4'
 bucket_id = os.environ['BUCKET_ID']
 
 
