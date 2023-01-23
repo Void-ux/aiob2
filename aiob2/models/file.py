@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import datetime
-from typing import TYPE_CHECKING, TypedDict, Literal, Optional, Union, List, Dict, Any
+from typing import TypedDict, Literal, Optional, Union, Dict, Any
 from typing_extensions import NotRequired
 
 from .archetypes import B2Object
 from ..utils import format_timestamp
-if TYPE_CHECKING:
-    from ..http import HTTPClient
 
 __all__ = ('File', 'DeletedFile', 'DownloadedFile')
 
@@ -74,7 +72,7 @@ class PartialFile(B2Object):
         return self.name
 
     def __eq__(self, other: Any):
-        return isinstance(other, LargeFile) and self.id == other.id
+        return isinstance(other, File) and self.id == other.id
 
 
 class LargeFilePartPayload(TypedDict):
