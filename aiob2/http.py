@@ -515,7 +515,7 @@ class HTTPClient:
         return self.request(route, headers=headers, json=data)
 
     def delete_file(self, *, file_name: str, file_id: str) -> Response[PartialFilePayload]:
-        route = Route('GET', '/b2api/v2/b2_delete_file_version', base=self._api_url)
+        route = Route('POST', '/b2api/v2/b2_delete_file_version', base=self._api_url)
         headers = {
             'Authorization': self._authorization_token
         }
