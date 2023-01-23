@@ -10,6 +10,7 @@ from .models import (
     DownloadedFile
 )
 from .http import HTTPClient
+from .file import LargeFile
 from .utils import setup_logging, MISSING
 
 __all__ = ('Client', )
@@ -147,7 +148,7 @@ class Client:
 
         data = await (await self._http.upload_file(
             content_bytes=content_bytes,
-            content_type=content_type,
+            content_type=content_type or 'b2/x-auto',
             file_name=file_name,
             bucket_id=bucket_id,
             content_disposition=content_disposition,
@@ -160,10 +161,51 @@ class Client:
         ))
         return File(data)
 
+    async def upload_large_file(
+        self,
+        bucket_id: str,
+        file_name: str,
+        content_type: Optional[str] = None,
+        upload_timestamp: Optional[datetime.datetime] = None,
+        comments: Optional[Dict[Any, Any]] = None
+    ) -> LargeFile:
+        """Creates a large file to upload parts/chunks to incrementally.
+
+        Parameters
+        ----------
+        bucket_id: str
+            The ID of the bucket to upload to.
+        file_name: str
+            The name of the file.
+        content_type: str
+            The content type of the file once every part is combined together.
+
+            If not provided, it will be automatically detected by Backblaze, and upon it not being discoverable, it'll
+            default to ``application/octet-stream``.
+        upload_timestamp: Optional[datetime.datetime]
+            The upload timestamp to use, instead of now.
+
+            .. note ::
+                Your account must be authorized to use this by Backblaze support.
+        comments: Optional[Dict[Any, Any]]
+            Key-value pairs denoting any extra information to store as metadata with the file.
+
+            Unlike ``upload_file``, multiple k-v pairs may be provided of any JSON-compatible data type.
+        """
+
+        data = await self._http.start_large_file(
+            bucket_id=bucket_id,
+            file_name=file_name,
+            content_type=content_type or 'b2/x-auto',
+            upload_timestamp=upload_timestamp,
+            comments=comments
+        )
+        return LargeFile(data, self._http)
+
     async def delete_file(
-            self,
-            file_name: str,
-            file_id: str
+        self,
+        file_name: str,
+        file_id: str
     ) -> DeletedFile:
         """Deletes a file from a bucket.
 
