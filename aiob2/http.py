@@ -214,7 +214,7 @@ class HTTPClient:
         headers = {
             'Authorization': self._authorization_token
         }
-        params: Dict[Any, Any] = {
+        data: Dict[Any, Any] = {
             'bucketId': bucket_id,
             'fileName': file_name,
             'contentType': content_type
@@ -229,7 +229,7 @@ class HTTPClient:
 
             headers['X-Bz-Custom-Upload-Timestamp'] = str(timestamp)
         if comments:
-            params['comments'] = comments
+            data['fileInfo'] = comments
 
         # Backblaze allows future dates for some accounts,
         # so pre-checking it isn't viable
@@ -237,10 +237,10 @@ class HTTPClient:
             timestamp = int(upload_timestamp.timestamp() * 1000)
             assert timestamp.bit_length() <= 64, \
                 'The upload timestamp must be 64 bits when turned into a UNIX timestamp in milliseconds.'
-            params['X-Bz-Custom-Upload-Timestamp'] = str(timestamp)
+            data['X-Bz-Custom-Upload-Timestamp'] = str(timestamp)
 
         route = Route('POST', '/b2api/v2/b2_start_large_file', base=self._api_url)
-        return await self.request(route, json=params, headers=headers)
+        return await self.request(route, json=data, headers=headers)
 
     async def _get_upload_part_url(self, file_id: str) -> LargeFileUploadInfo:
         """Fetches an upload URL and token for uploading parts of a large file.
