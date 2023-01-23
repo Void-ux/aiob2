@@ -113,6 +113,8 @@ class LargeFile(PartialFile):
             raise RuntimeError('Cancelled large files cannot be completed')
         if self._finished:
             raise RuntimeError('This large file has already been finished')
+        if len(self._parts) <= 1:
+            raise RuntimeError('Large files must have at least 2 parts to be finished')
 
         data = await self._http.finish_large_file(self.id, [i.content_sha1 for i in self._parts])
         return File(data)
