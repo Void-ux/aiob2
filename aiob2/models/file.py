@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 import datetime
-from typing import TypedDict, Literal, Optional, Union, Dict, Any
+from typing import TYPE_CHECKING, TypedDict, Literal, Optional, Union, List, Dict, Any
 from typing_extensions import NotRequired
 
 from .archetypes import B2Object
 from ..utils import format_timestamp
+if TYPE_CHECKING:
+    from ..http import HTTPClient
 
 __all__ = ('File', 'DeletedFile', 'DownloadedFile')
 
@@ -15,7 +19,7 @@ class PartialFilePayload(TypedDict):
 
 class UploadPayload(PartialFilePayload):
     accountId: str
-    action: Literal['upload']
+    action: Literal['start', 'upload', 'hide', 'folder']
     bucketId: str
     contentLength: Optional[int]
     contentSha1: Optional[str]
@@ -70,10 +74,28 @@ class PartialFile(B2Object):
         return self.name
 
     def __eq__(self, other: Any):
-        if isinstance(other, File):
-            return self.id == other.id
+        return isinstance(other, LargeFile) and self.id == other.id
 
-        return False
+
+class LargeFilePartPayload(TypedDict):
+    fileId: str
+    partNumber: int
+    contentLength: int
+    contentSha1: str
+    contentMd5: Optional[str]
+    serverSideEncryption: Optional[Dict[Any, Any]]
+    uploadTimestamp: int
+
+
+class LargeFilePart(B2Object):
+    def __init__(self, payload: LargeFilePartPayload) -> None:
+        self.file_id: str = payload['fileId']
+        self.part_number: int = payload['partNumber']
+        self.content_length: int = payload['contentLength']
+        self.content_sha1: str = payload['contentSha1']
+        self.content_md5: Optional[str] = payload['contentMd5']
+        self.server_side_encryption: Optional[Dict[Any, Any]] = payload['serverSideEncryption']
+        self.upload_timestamp: datetime.datetime = format_timestamp(payload['uploadTimestamp'])
 
 
 class File(PartialFile):
@@ -86,7 +108,7 @@ class File(PartialFile):
     action: Literal[``'upload'``]
         This will always be ``upload``.
     bucket_id: :class:`str`
-        The bucket's ID that the file is in.
+        The file's bucket ID.
     content_length: :class:`int`
         The file's size represented in number of bytes.
     content_sha1: :class:`str`
@@ -124,7 +146,7 @@ class File(PartialFile):
         assert data['contentType'] is not None
 
         self.account_id: str = data['accountId']
-        self.action: Literal['upload'] = data['action']
+        self.action: Literal['upload'] = data['action']  # type: ignore
         self.bucket_id: str = data['bucketId']
         self.content_length: int = data['contentLength']
         self.content_sha1: str = data['contentSha1']

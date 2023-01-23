@@ -21,7 +21,7 @@ from .errors import (
     BackblazeServerError,
     HTTPException
 )
-from .models.file import UploadPayload, PartialFilePayload
+from .models.file import UploadPayload, PartialFilePayload, LargeFilePartPayload
 from .models.account import AccountAuthorizationPayload, Permissions
 from .utils import MISSING
 
@@ -42,7 +42,18 @@ class UploadURLPayload(TypedDict):
     authorizationToken: str
 
 
+class LargeFileUploadURLPayload(TypedDict):
+    fileId: str
+    uploadUrl: str
+    authorizationToken: str
+
+
 class BucketUploadInfo(NamedTuple):
+    url: str
+    token: str
+
+
+class LargeFileUploadInfo(NamedTuple):
     url: str
     token: str
 
@@ -112,9 +123,8 @@ class HTTPClient:
         self._absolute_minimum_part_size: int = MISSING
         self._s3_api: str = MISSING
 
-        # mappings of bucket ids and their respective
-        # upload urls and tokens
         self._upload_urls: Dict[str, BucketUploadInfo] = {}
+        self._large_upload_urls: Dict[str, LargeFileUploadInfo] = {}
 
         # used when first authorizing to update the MISSING headers
         # and when they're refreshed, i.e. when they expire
@@ -167,7 +177,7 @@ class HTTPClient:
         self._s3_api: str = response['s3ApiUrl']
 
     async def _get_upload_url(self, bucket_id: str) -> BucketUploadInfo:
-        """Fetches the upload URL and token for a specific bucket.
+        """Fetches the upload URL and token for a specific bucket or a large file.
 
         Parameters
         -----------
@@ -177,21 +187,94 @@ class HTTPClient:
         Returns
         ---------
         :class:`BucketUploadInfo`
-            The URL for uploading files, and the authorization token to use with it.
+            The URL for uploading files or file parts, and the authorization token to use with it.
         """
 
-        route = Route('GET', '/b2api/v2/b2_get_upload_url', base=self._api_url)
         headers = {
             'Authorization': self._authorization_token
         }
         params = {
             'bucketId': bucket_id
         }
-        response: UploadURLPayload = await self.request(route, headers=headers, params=params)
 
+        route = Route('GET', '/b2api/v2/b2_get_upload_url', base=self._api_url)
+        response: UploadURLPayload = await self.request(route, headers=headers, params=params)
         return BucketUploadInfo(response['uploadUrl'], response['authorizationToken'])
 
-    async def request(self, route: Route, *, bucket_id: Optional[str] = None, **kwargs: Any) -> Any:
+    async def start_large_file(
+        self,
+        bucket_id: str,
+        file_name: str,
+        content_type: str,
+        upload_timestamp: Optional[datetime.datetime],
+        comments: Optional[Dict[str, str]]
+    ) -> UploadPayload:
+        """Prepares for uploading every part of a large file."""
+
+        headers = {
+            'Authorization': self._authorization_token
+        }
+        params: Dict[Any, Any] = {
+            'bucketId': bucket_id,
+            'fileName': file_name,
+            'contentType': content_type
+        }
+
+        if upload_timestamp:
+            assert datetime.datetime.now() >= upload_timestamp, 'Future dates for upload timestamps are not supported'
+
+            timestamp = int(upload_timestamp.timestamp() * 1000)
+            assert timestamp.bit_length() <= 64, \
+                'The upload timestamp must be 64 bits when turned into a UNIX timestamp in milliseconds'
+
+            headers['X-Bz-Custom-Upload-Timestamp'] = str(timestamp)
+        if comments:
+            params['comments'] = comments
+
+        # Backblaze allows future dates for some accounts,
+        # so pre-checking it isn't viable
+        if upload_timestamp:
+            timestamp = int(upload_timestamp.timestamp() * 1000)
+            assert timestamp.bit_length() <= 64, \
+                'The upload timestamp must be 64 bits when turned into a UNIX timestamp in milliseconds.'
+            params['X-Bz-Custom-Upload-Timestamp'] = str(timestamp)
+
+        route = Route('POST', '/b2api/v2/b2_start_large_file', base=self._api_url)
+        return await self.request(route, json=params, headers=headers)
+
+    async def _get_upload_part_url(self, file_id: str) -> LargeFileUploadInfo:
+        """Fetches an upload URL and token for uploading parts of a large file.
+
+        Parameters
+        -----------
+        file_id: :class:`str`
+            The ID of the large file.
+
+        Returns
+        ---------
+        :class:`LargeFileUploadInfo`
+            The URL for uploading files, and the authorization token to use with it.
+        """
+
+        headers = {
+            'Authorization': self._authorization_token
+        }
+        params = {
+            'fileId': file_id
+        }
+
+        route = Route('GET', '/b2api/v2/b2_get_upload_part_url', base=self._api_url)
+        response: LargeFileUploadURLPayload = await self.request(route, headers=headers, params=params)
+        return LargeFileUploadInfo(response['uploadUrl'], response['authorizationToken'])
+
+    async def request(
+        self,
+        route: Route,
+        *,
+        bucket_id: Optional[str] = None,
+        file_id: Optional[str] = None,
+        **kwargs: Any
+    ) -> Any:
         """Send a HTTP request to the `route.url`, with HTTP error code handling defined by the B2 API docs.
 
         Parameters
@@ -203,6 +286,11 @@ class HTTPClient:
         **kwargs: Any
             kwargs to pass to `aiohttp.ClientSession.request()`, any of `headers`, `params`, `data`, `json`.
         """
+
+        # we'll use this variable to tell whether or not to refresh an upload
+        # url url/token, or the account's api url/token. this'll only be `True`
+        # if we're using b2_upload_file or b2_upload_part
+        uploading_file = bucket_id is not None or file_id is not None
 
         if self._session is None:
             self._session = await self._generate_session()
@@ -224,7 +312,7 @@ class HTTPClient:
 
         for tries in range(5):
             async with self._session.request(route.method, route.url, headers=headers, **kwargs) as response:
-                if bucket_id is not None:
+                if uploading_file:
                     log.debug(
                         '%s %s with a payload of %s bytes has returned %s',
                         route.method,
@@ -232,6 +320,9 @@ class HTTPClient:
                         len(kwargs['data']),
                         response.status
                     )
+                else:
+                    log.debug('%s %s has returned %s', route.method, route.url, response.status)
+
                 data = await json_or_bytes(response, route)
 
                 if 300 > response.status >= 200:
@@ -252,7 +343,7 @@ class HTTPClient:
                 if response.status in {408, 500, 503}:
                     # Backblaze recommends calling b2_get_upload_url again
                     # this wasn't shortened into a single 'if' to preserve readability
-                    if response.status == 503 and bucket_id is not None:
+                    if response.status == 503 and uploading_file:
                         pass
                     else:
                         log.warning(
@@ -265,7 +356,7 @@ class HTTPClient:
                         )
                         await asyncio.sleep(1 + tries * 2)
 
-                if response.status == 401 or (response.status == 503 and bucket_id is not None):
+                if response.status == 401 or (response.status == 503 and uploading_file):
                     if route.path == '/b2_authorize_account':
                         raise Unauthorized(response, data)
 
@@ -279,13 +370,20 @@ class HTTPClient:
                             data['code']
                         )
 
-                        # this means we're uploading a file (b2_upload_file)
-                        if bucket_id is not None:
-                            assert bucket_id is not None
-                            bucket_info = self._upload_urls[bucket_id] = await self._get_upload_url(bucket_id)
+                        # b2_upload_file, b2_upload_part
+                        if uploading_file:
+                            if bucket_id is not None:
+                                upload_info = self._upload_urls[bucket_id] = await self._get_upload_url(bucket_id)
+                            elif file_id is not None:
+                                upload_info = self._large_upload_urls[file_id] = await self._get_upload_part_url(file_id)
                             # reset the upload URL and token and retry
-                            headers['Authorization'] = bucket_info.token
-                            route = Route(route.method, route.path, base=bucket_info.url, parameters=route.parameters)
+                            headers['Authorization'] = upload_info.token  # type: ignore
+                            route = Route(
+                                route.method,
+                                route.path,
+                                base=upload_info.url,  # type: ignore
+                                parameters=route.parameters
+                            )
 
                             log.info('Re-authenticated upload URL and upload URL token')
                         else:
@@ -314,7 +412,7 @@ class HTTPClient:
         file_name: str,
         content_bytes: bytes,
         bucket_id: str,
-        content_type: Optional[str],
+        content_type: str,
         content_disposition: Optional[str],
         content_language: Optional[List[str]],
         expires: Optional[datetime.datetime],
@@ -323,15 +421,15 @@ class HTTPClient:
         upload_timestamp: Optional[datetime.datetime],
         server_side_encryption: Optional[Literal['AES256']]
     ) -> Response[UploadPayload]:
-        bucket_upload_info = self._upload_urls.get(bucket_id)
-        if bucket_upload_info is None:
-            bucket_upload_info = await self._get_upload_url(bucket_id)
-            self._upload_urls[bucket_id] = bucket_upload_info
+        upload_info = self._upload_urls.get(bucket_id)
+        if upload_info is None:
+            upload_info = await self._get_upload_url(bucket_id)
+            self._upload_urls[bucket_id] = upload_info
 
         headers: Dict[str, Union[str, int]] = {
-            'Authorization': bucket_upload_info.token,
+            'Authorization': upload_info.token,
             'X-Bz-File-Name': quote(file_name),
-            'Content-Type': content_type or 'b2/x-auto',
+            'Content-Type': content_type,
             'X-Bz-Content-Sha1': hashlib.sha1(content_bytes).hexdigest()
         }
         if content_disposition:
@@ -348,30 +446,84 @@ class HTTPClient:
         if comments:
             key, value = list(comments.items())[0]
             headers[f'X-Bz-Info-{quote_plus(key)}'] = quote(value.encode('utf-8'))
-        # Backblaze allows future dates for some accounts,
-        # so pre-checking it isn't viable
         if upload_timestamp:
+            assert datetime.datetime.now() >= upload_timestamp, 'Future dates for upload timestamps are not supported'
+
             timestamp = int(upload_timestamp.timestamp() * 1000)
             assert timestamp.bit_length() <= 64, \
-                'The upload timestamp must be 64 bits when turned into a UNIX timestamp in milliseconds.'
+                'The upload timestamp must be 64 bits when turned into a UNIX timestamp in milliseconds'
+
             headers['X-Bz-Custom-Upload-Timestamp'] = str(timestamp)
         if server_side_encryption:
             assert server_side_encryption == 'AES256', 'Backblaze currently only supports AES256 server-side encryption'
             headers['X-Bz-Server-Side-Encryption'] = server_side_encryption
 
-        route = Route('POST', '', base=bucket_upload_info.url)
+        route = Route('POST', '', base=upload_info.url)
         return self.request(route, bucket_id=bucket_id, headers=headers, data=content_bytes)
+
+    async def upload_part(
+        self,
+        file_id: str,
+        part_number: int,
+        content_bytes: bytes,
+        sha1: str
+    ) -> Response[LargeFilePartPayload]:
+        upload_info = self._large_upload_urls.get(file_id)
+        if upload_info is None:
+            upload_info = await self._get_upload_part_url(file_id)
+            self._large_upload_urls[file_id] = upload_info
+
+        content_length = len(content_bytes)
+        if content_length > self._recommended_part_size:
+            log.warning(
+                'Upload part %s for file ID %s is over the recommended part size, this may result in longer upload times',
+                part_number,
+                file_id
+            )
+
+        headers = {
+            'Authorization': upload_info.token,
+            'X-Bz-Part-Number': str(part_number),
+            'Content-Length': str(content_length),
+            'X-Bz-Content-Sha1': sha1
+        }
+
+        route = Route('POST', '', base=upload_info.url)
+        return self.request(route, file_id=file_id, headers=headers, data=content_bytes)
+
+    def finish_large_file(self, file_id: str, sha1_list: list[str]) -> Response[UploadPayload]:
+        headers = {
+            'Authorization': self._authorization_token
+        }
+        data = {
+            'fileId': file_id,
+            'partSha1Array': sha1_list
+        }
+
+        route = Route('POST', '/b2api/v2/b2_finish_large_file', base=self._api_url)
+        return self.request(route, headers=headers, json=data)
+
+    def cancel_large_file(self, file_id: str) -> Response[None]:
+        headers = {
+            'Authorization': self._authorization_token
+        }
+        data = {
+            'fileId': file_id
+        }
+
+        route = Route('POST', '/b2api/v2/b2_cancel_large_file', base=self._api_url)
+        return self.request(route, headers=headers, json=data)
 
     def delete_file(self, *, file_name: str, file_id: str) -> Response[PartialFilePayload]:
         route = Route('GET', '/b2api/v2/b2_delete_file_version', base=self._api_url)
         headers = {
             'Authorization': self._authorization_token
         }
-        params = {
+        data = {
             'fileName': file_name,
             'fileId': file_id
         }
-        return self.request(route, headers=headers, params=params)
+        return self.request(route, headers=headers, json=data)
 
     def download_file_by_id(
         self,

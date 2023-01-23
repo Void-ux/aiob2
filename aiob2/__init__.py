@@ -7,6 +7,7 @@ from .errors import (
     HTTPException
 )
 from .models import File, DeletedFile, DownloadedFile
+from .file import LargeFile
 from .bucket import Client
 
 __all__ = (
@@ -19,7 +20,8 @@ __all__ = (
     'File',
     'DeletedFile',
     'DownloadedFile',
-    'Client'
+    'Client',
+    'LargeFile'
 )
 
 __title__ = 'aiob2'
