@@ -43,3 +43,5 @@ class TestUpload:
 
         # ensure data is stored properly
         assert ValueStorage.test_upload_file == file
+
+        await client.close()

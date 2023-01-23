@@ -34,3 +34,5 @@ class TestDownload:
         assert downloaded_file.name == file.name
         assert downloaded_file.id == file.id
         assert downloaded_file.content == path.read_bytes()
+
+        await client.close()

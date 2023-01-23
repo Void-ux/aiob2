@@ -11,7 +11,7 @@ path = Path(__file__).resolve().parent / 'payloads/test_image.jpg'
 
 class TestDownload:
     @pytest.mark.asyncio
-    @pytest.mark.order(4)
+    @pytest.mark.order(5)
     async def test_ctx_delete(self):
         async with Client(os.environ['KEY_ID'], os.environ['KEY'], log_level=logging.DEBUG) as client:
             for file in (
