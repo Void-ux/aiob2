@@ -43,3 +43,5 @@ class TestTokenExpiration:
         assert file1.content_length == file2.content_length
         assert None not in (file1.id, file2.id)
         assert file1.account_id == file2.account_id
+
+        await client.close()
