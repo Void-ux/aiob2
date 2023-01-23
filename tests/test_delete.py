@@ -17,7 +17,8 @@ class TestDownload:
             for file in (
                 ValueStorage.test_upload_file,
                 ValueStorage.test_token_expiration_file1,
-                ValueStorage.test_token_expiration_file2
+                ValueStorage.test_token_expiration_file2,
+                ValueStorage.test_large_upload_file
             ):
                 assert isinstance(file, File)
 
