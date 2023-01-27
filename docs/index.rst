@@ -8,6 +8,7 @@ aiob2 is a modern, simple and async-ready API wrapper for Backblaze's B2 Cloud S
 - Modern Pythonic API using ``async``\/``await`` syntax
 - An easy to use object oriented design
 - Token expiration handling and refreshing
+- Out of the box parallel uploading support
 
 Getting Started
 ---------------

@@ -1,28 +1,36 @@
 from __future__ import annotations
 
-import aiohttp
 import asyncio
 import base64
-import hashlib
-import sys
-import logging
 import datetime
+import hashlib
+import logging
 import re
-from typing import TYPE_CHECKING, TypeVar, Coroutine, NamedTuple, TypedDict, Union, Optional, Literal, Tuple, List, Dict, Any
+import sys
+from collections import defaultdict
+from typing import (
+    TYPE_CHECKING,
+    Coroutine,
+    Literal,
+    NamedTuple,
+    Optional,
+    Tuple,
+    TypedDict,
+    TypeVar,
+    Union,
+    Any,
+    DefaultDict,
+    Dict,
+    List,
+)
 from urllib.parse import quote, quote_plus
 
+import aiohttp
 from yarl import URL
 
-from .errors import (
-    RateLimited,
-    Unauthorized,
-    Forbidden,
-    NotFound,
-    BackblazeServerError,
-    HTTPException
-)
-from .models.file import UploadPayload, PartialFilePayload, LargeFilePartPayload
+from .errors import BackblazeServerError, Forbidden, HTTPException, NotFound, RateLimited, Unauthorized
 from .models.account import AccountAuthorizationPayload, Permissions
+from .models.file import LargeFilePartPayload, PartialFilePayload, UploadPayload
 from .utils import MISSING
 
 if TYPE_CHECKING:
@@ -51,11 +59,15 @@ class LargeFileUploadURLPayload(TypedDict):
 class BucketUploadInfo(NamedTuple):
     url: str
     token: str
+    created: datetime.datetime
+    in_use: bool = False
 
 
 class LargeFileUploadInfo(NamedTuple):
     url: str
     token: str
+    created: datetime.datetime
+    in_use: bool = False
 
 
 class Route:
@@ -123,8 +135,8 @@ class HTTPClient:
         self._absolute_minimum_part_size: int = MISSING
         self._s3_api: str = MISSING
 
-        self._upload_urls: Dict[str, BucketUploadInfo] = {}
-        self._large_upload_urls: Dict[str, LargeFileUploadInfo] = {}
+        self._upload_urls: DefaultDict[str, List[BucketUploadInfo]] = defaultdict(list)
+        self._upload_part_urls: DefaultDict[str, List[LargeFileUploadInfo]] = defaultdict(list)
 
         # used when first authorizing to update the MISSING headers
         # and when they're refreshed, i.e. when they expire
@@ -197,9 +209,10 @@ class HTTPClient:
             'bucketId': bucket_id
         }
 
+        now = datetime.datetime.now()
         route = Route('GET', '/b2api/v2/b2_get_upload_url', base=self._api_url)
         response: UploadURLPayload = await self.request(route, headers=headers, params=params)
-        return BucketUploadInfo(response['uploadUrl'], response['authorizationToken'])
+        return BucketUploadInfo(response['uploadUrl'], response['authorizationToken'], now)
 
     async def start_large_file(
         self,
@@ -263,16 +276,17 @@ class HTTPClient:
             'fileId': file_id
         }
 
+        now = datetime.datetime.now()
         route = Route('GET', '/b2api/v2/b2_get_upload_part_url', base=self._api_url)
         response: LargeFileUploadURLPayload = await self.request(route, headers=headers, params=params)
-        return LargeFileUploadInfo(response['uploadUrl'], response['authorizationToken'])
+        return LargeFileUploadInfo(response['uploadUrl'], response['authorizationToken'], now)
 
     async def request(
         self,
         route: Route,
         *,
         bucket_id: Optional[str] = None,
-        file_id: Optional[str] = None,
+        large_file_id: Optional[str] = None,
         **kwargs: Any
     ) -> Any:
         """Send a HTTP request to the `route.url`, with HTTP error code handling defined by the B2 API docs.
@@ -290,7 +304,7 @@ class HTTPClient:
         # we'll use this variable to tell whether or not to refresh an upload
         # url url/token, or the account's api url/token. this'll only be `True`
         # if we're using b2_upload_file or b2_upload_part
-        uploading_file = bucket_id is not None or file_id is not None
+        uploading_file = bucket_id is not None or large_file_id is not None
 
         if self._session is None:
             self._session = await self._generate_session()
@@ -360,40 +374,66 @@ class HTTPClient:
                     if route.path == '/b2_authorize_account':
                         raise Unauthorized(response, data)
 
-                    # (auth token has expired, auth token was not valid to begin with, internal server error i.e. 503)
-                    if data['code'] in ('expired_auth_token', 'bad_auth_token', 'service_unavailable'):
-                        log.info(
-                            '%s %s has returned %s (%s), most likely because it expired, attempting to re-authenticate',
+                    if data['code'] not in (
+                        'expired_auth_token',  # auth token has expired (created over 24 hours ago)
+                        'bad_auth_token',  # auth token was not valid to begin with
+                        'service_unavailable',  # internal server error i.e. 503
+                        'auth_token_limit'  # we're uploading in parallel
+                    ):
+                        raise Unauthorized(response, data)
+
+                    log.info(
+                        '%s %s has returned %s (%s), most likely because it expired, attempting to re-authenticate',
+                        route.method,
+                        route.url,
+                        response.status,
+                        data['code']
+                    )
+
+                    # b2_upload_file, b2_upload_part
+                    if uploading_file:
+                        # we need to remove this expired token to
+                        # prevent it from being used again, since
+                        # find_upload_(part_)url always returns the
+                        # first element found
+
+                        if bucket_id is not None:
+                            old_upload_info = \
+                                [i for i in self._upload_urls[bucket_id] if i.token == headers['Authorization']]
+                            # we'll avoid removing upload URLs if we're uploading in
+                            # parallel, since the previous token is still valid, we
+                            # just need to create a new one
+                            if data['code'] != 'auth_token_limit':
+                                self._upload_urls[bucket_id].remove(old_upload_info[0])
+
+                            upload_info = await self._find_upload_url(bucket_id)
+                        elif large_file_id is not None:
+                            old_upload_info = \
+                                [i for i in self._upload_part_urls[large_file_id] if i.token == headers['Authorization']]
+                            # we'll avoid removing upload URLs if we're uploading in
+                            # parallel, since the previous token is still valid, we
+                            # just need to create a new one
+                            if data['code'] != 'auth_token_limit':
+                                self._upload_part_urls[large_file_id].remove(old_upload_info[0])
+
+                            upload_info = await self._find_upload_part_url(large_file_id)
+
+                        # reset the upload URL and token and retry
+                        headers['Authorization'] = upload_info.token  # type: ignore
+                        route = Route(
                             route.method,
-                            route.url,
-                            response.status,
-                            data['code']
+                            route.path,
+                            base=upload_info.url,  # type: ignore
+                            parameters=route.parameters
                         )
 
-                        # b2_upload_file, b2_upload_part
-                        if uploading_file:
-                            if bucket_id is not None:
-                                upload_info = self._upload_urls[bucket_id] = await self._get_upload_url(bucket_id)
-                            elif file_id is not None:
-                                upload_info = self._large_upload_urls[file_id] = await self._get_upload_part_url(file_id)
-                            # reset the upload URL and token and retry
-                            headers['Authorization'] = upload_info.token  # type: ignore
-                            route = Route(
-                                route.method,
-                                route.path,
-                                base=upload_info.url,  # type: ignore
-                                parameters=route.parameters
-                            )
-
-                            log.info('Re-authenticated upload URL and upload URL token')
-                        else:
-                            # download_by_file_x also uses the account authorization token
-                            await self._authorize_account()
-                            headers['Authorization'] = self._authorization_token
-
-                            log.info('Re-authenticated account authorization token')
+                        log.info('Re-authenticated upload URL and upload URL token')
                     else:
-                        raise Unauthorized(response, data)
+                        # download_by_file_x also uses the account authorization token
+                        await self._authorize_account()
+                        headers['Authorization'] = self._authorization_token
+
+                        log.info('Re-authenticated account authorization token')
 
                     continue
 
@@ -405,6 +445,52 @@ class HTTPClient:
                     raise BackblazeServerError(response, data)
                 else:
                     raise HTTPException(response, data)
+
+    def _purge_expired_upload_urls(self, bucket_id: str) -> None:
+        old = self._upload_urls[bucket_id]
+        new = self._upload_urls[bucket_id] = list(filter(
+            lambda x: datetime.datetime.now() > x.created + datetime.timedelta(days=1),
+            self._upload_urls[bucket_id]
+        ))
+
+        if len(old) > len(new):
+            log.debug('Purged %s expired upload URLs for bucket ID %s', len(old) - len(new), bucket_id)
+
+    async def _find_upload_url(self, bucket_id: str) -> BucketUploadInfo:
+        """Attempts to find an existing non-expired, not-in-use upload URL for a bucket, otherwise it'll fetch a new one.
+
+        Note
+        ~~~~
+            This will also purge all the expired upload URLs from `self._upload_urls[bucket_id]` and append the newly-created
+            one if applicable.
+
+        Parameters
+        ----------
+        bucket_id: str
+            The bucket_id to find/create an upload URL for.
+
+        Returns
+        -------
+        :class:`BucketUploadInfo`
+            The resolved bucket upload info, or the newly-created one.
+        """
+        self._purge_expired_upload_urls(bucket_id)
+        upload_infos = self._upload_urls[bucket_id]
+
+        if not upload_infos:
+            log.debug('No existing upload URLs found for bucket ID %s, creating a new one', bucket_id)
+            upload_info = await self._get_upload_url(bucket_id)
+            self._upload_urls[bucket_id].append(upload_info)
+        else:
+            if all(x.in_use for x in upload_infos):
+                log.debug('All existing upload URLs for bucket ID %s are in-use, creating a new one', bucket_id)
+                upload_info = await self._get_upload_url(bucket_id)
+                self._upload_urls[bucket_id].append(upload_info)
+            else:
+                log.debug('Using existing upload URL for bucket ID %s', bucket_id)
+                upload_info = list(filter(lambda x: not x.in_use, upload_infos))[0]
+
+        return upload_info
 
     async def upload_file(
         self,
@@ -421,10 +507,7 @@ class HTTPClient:
         upload_timestamp: Optional[datetime.datetime],
         server_side_encryption: Optional[Literal['AES256']]
     ) -> Response[UploadPayload]:
-        upload_info = self._upload_urls.get(bucket_id)
-        if upload_info is None:
-            upload_info = await self._get_upload_url(bucket_id)
-            self._upload_urls[bucket_id] = upload_info
+        upload_info = await self._find_upload_url(bucket_id)
 
         headers: Dict[str, Union[str, int]] = {
             'Authorization': upload_info.token,
@@ -461,6 +544,56 @@ class HTTPClient:
         route = Route('POST', '', base=upload_info.url)
         return self.request(route, bucket_id=bucket_id, headers=headers, data=content_bytes)
 
+    def _purge_expired_upload_part_urls(self, large_file_id: str) -> None:
+        old = self._upload_part_urls[large_file_id]
+        new = self._upload_part_urls[large_file_id] = list(filter(
+            lambda x: datetime.datetime.now() > x.created + datetime.timedelta(days=1),
+            self._upload_part_urls[large_file_id]
+        ))
+
+        if len(old) > len(new):
+            log.debug('Purged %s expired upload URLs for large file ID %s', len(old) - len(new), large_file_id)
+
+    async def _find_upload_part_url(self, large_file_id: str) -> LargeFileUploadInfo:
+        """Attempts to find an existing non-expired, not-in-use large upload URL for a bucket, otherwise it'll fetch a new
+        one.
+
+        Note
+        ~~~~
+            This will also purge all the expired large upload URLs from `self._upload_urls[bucket_id]` and append the
+            newly-created one if applicable.
+
+        Parameters
+        ----------
+        bucket_id: str
+            The bucket_id to find/create a large upload URL for.
+
+        Returns
+        -------
+        :class:`LargeFileUploadInfo`
+            The resolved bucket upload info, or the newly-created one.
+        """
+        self._purge_expired_upload_part_urls(large_file_id)
+        upload_part_infos = self._upload_part_urls.get(large_file_id)
+
+        # remember, upload_part_infos could also be []
+        if not upload_part_infos:
+            log.debug('No existing upload URLs found for large file ID %s, creating a new one', large_file_id)
+            upload_part_info = await self._get_upload_part_url(large_file_id)
+            self._upload_part_urls[large_file_id].append(upload_part_info)
+        else:
+            self._purge_expired_upload_part_urls(large_file_id)
+
+            if all(x.in_use for x in upload_part_infos):
+                log.debug('All existing upload URLs for large file ID %s are in-use, creating a new one', large_file_id)
+                upload_part_info = await self._get_upload_part_url(large_file_id)
+                self._upload_part_urls[large_file_id].append(upload_part_info)
+            else:
+                log.debug('Using existing upload URL for large file ID %s', large_file_id)
+                upload_part_info = list(filter(lambda x: not x.in_use, upload_part_infos))[0]
+
+        return upload_part_info
+
     async def upload_part(
         self,
         file_id: str,
@@ -468,10 +601,7 @@ class HTTPClient:
         content_bytes: bytes,
         sha1: str
     ) -> Response[LargeFilePartPayload]:
-        upload_info = self._large_upload_urls.get(file_id)
-        if upload_info is None:
-            upload_info = await self._get_upload_part_url(file_id)
-            self._large_upload_urls[file_id] = upload_info
+        upload_info = await self._find_upload_part_url(file_id)
 
         content_length = len(content_bytes)
         if content_length > self._recommended_part_size:
@@ -489,7 +619,7 @@ class HTTPClient:
         }
 
         route = Route('POST', '', base=upload_info.url)
-        return self.request(route, file_id=file_id, headers=headers, data=content_bytes)
+        return self.request(route, large_file_id=file_id, headers=headers, data=content_bytes)
 
     def finish_large_file(self, file_id: str, sha1_list: list[str]) -> Response[UploadPayload]:
         headers = {
