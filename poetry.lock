@@ -289,6 +289,20 @@ pytest = ">=6.1.0"
 testing = ["pytest-trio (>=0.7.0)", "mypy (>=0.931)", "flaky (>=3.5.0)", "hypothesis (>=5.7.1)", "coverage (>=6.2)"]
 
 [[package]]
+name = "pytest-env"
+version = "0.8.1"
+description = "py.test plugin that allows you to add environment variables."
+category = "dev"
+optional = false
+python-versions = ">=3.7"
+
+[package.dependencies]
+pytest = ">=7.1.3"
+
+[package.extras]
+test = ["coverage (>=6.5)", "pytest-mock (>=3.10)"]
+
+[[package]]
 name = "pytest-order"
 version = "1.0.1"
 description = "pytest plugin to run your tests in a specific order"
@@ -531,7 +545,7 @@ speed = []
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "d354aa9503457df04baeca427e6e696bc56519924fec01961dcf054b19e7bb84"
+content-hash = "54eeff7826ed77af85780c3098351b124eac7d529b4fc9cf21537bb1d7d9c767"
 
 [metadata.files]
 aiohttp = []
@@ -560,6 +574,7 @@ pluggy = []
 pygments = []
 pytest = []
 pytest-asyncio = []
+pytest-env = []
 pytest-order = []
 pytz = []
 requests = []
