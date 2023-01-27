@@ -1,23 +1,24 @@
 import os
 import pytest
 import logging
-from pathlib import Path
 
 from aiob2 import Client, File
 from .conftest import ValueStorage
 
-path = Path(__file__).resolve().parent / 'payloads/test_image.jpg'
 
-
-class TestDownload:
+class TestDelete:
     @pytest.mark.asyncio
-    @pytest.mark.order(5)
+    @pytest.mark.order(6)
     async def test_ctx_delete(self):
         async with Client(os.environ['KEY_ID'], os.environ['KEY'], log_level=logging.DEBUG) as client:
             for file in (
                 ValueStorage.test_upload_file,
                 ValueStorage.test_token_expiration_file1,
                 ValueStorage.test_token_expiration_file2,
+                ValueStorage.test_preemptive_token_expiration_file1,
+                ValueStorage.test_preemptive_token_expiration_file2,
+                ValueStorage.test_parallel1,
+                ValueStorage.test_parallel2,
                 ValueStorage.test_large_upload_file
             ):
                 assert isinstance(file, File)
