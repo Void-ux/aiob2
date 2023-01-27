@@ -11,7 +11,7 @@ path = Path(__file__).resolve().parent / 'payloads/test_image.jpg'
 
 class TestDownload:
     @pytest.mark.asyncio
-    @pytest.mark.order(3)
+    @pytest.mark.order(2)
     async def test_download(self):
         client = Client(os.environ['KEY_ID'], os.environ['KEY'], log_level=logging.DEBUG)
         file = ValueStorage.test_upload_file
