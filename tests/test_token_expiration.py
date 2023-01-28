@@ -30,6 +30,8 @@ class TestTokenExpiration:
         # BucketUploadInfo is read-only (NamedTuple)
         # so we'll need to re-instantiate it
         upload_info = client._http._upload_urls[bucket_id][0]  # type: ignore
+        assert upload_info.in_use is False
+
         dummy_token = BucketUploadInfo(upload_info.url, 'foo', upload_info.created)
         client._http._upload_urls[bucket_id] = [dummy_token]  # type: ignore
 
@@ -46,12 +48,14 @@ class TestTokenExpiration:
         assert file1.id and file2.id
         assert file1.account_id == file2.account_id
 
-        # ensure that we actually generated a new token
+        # ensure that we actually generated a new token and removed the old one
         assert len(client._http._upload_urls[bucket_id]) == 1  # type: ignore
         upload_info2 = client._http._upload_urls[bucket_id][0]  # type: ignore
         assert upload_info.url != upload_info2.url
         assert upload_info.token != upload_info2.token
         assert upload_info.created != upload_info2.created
+        # ensure the second try in HTTPClient.request frees the upload URL
+        assert upload_info2.in_use is False
 
         await client.close()
 
@@ -71,6 +75,8 @@ class TestTokenExpiration:
         # BucketUploadInfo is read-only (NamedTuple)
         # so we'll need to re-instantiate it
         upload_info = client._http._upload_urls[bucket_id][0]  # type: ignore
+        assert upload_info.in_use is False
+
         dummy_info = BucketUploadInfo(
             upload_info.url,
             upload_info.token,
@@ -97,5 +103,7 @@ class TestTokenExpiration:
         assert upload_info.url != upload_info2.url
         assert upload_info.token != upload_info2.token
         assert upload_info.created != upload_info2.created
+        # ensure the second try in HTTPClient.request frees the upload URL
+        assert upload_info2.in_use is False
 
         await client.close()
