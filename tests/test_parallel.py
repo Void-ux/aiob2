@@ -5,13 +5,25 @@ import asyncio
 import logging
 from pathlib import Path
 
-from aiob2 import Client
+from aiob2 import Client, File
 from .conftest import ValueStorage
 
 # we'll use the video here since the image often gets uploaded so quickly, it
 # can do task 1 first, and then task 2 without any task-switching or vice versa
 path = Path(__file__).resolve().parent / 'payloads/test_video.mp4'
+data = path.read_bytes()
 bucket_id = os.environ['BUCKET_ID']
+
+
+async def upload(client: Client) -> File:
+    file = await client.upload_file(
+        content_bytes=data,
+        content_type='image/jpeg',
+        file_name=str(uuid.uuid4()),
+        bucket_id=bucket_id
+    )
+
+    return file
 
 
 class TestParallelUploads:
@@ -19,31 +31,15 @@ class TestParallelUploads:
     @pytest.mark.order(5)
     async def test_parallel_upload(self):
         client = Client(os.environ['KEY_ID'], os.environ['KEY'], log_level=logging.DEBUG)
-        data = path.read_bytes()
         # authenticate and set the upload URL/token, otherwise
         # each of the gather uploads will create their own
         # upload URLs and tokens, defeating the point of this
         # test.
-        await client.upload_file(
-            content_bytes=data,
-            content_type='image/jpeg',
-            file_name=str(uuid.uuid4()),
-            bucket_id=bucket_id
-        )
+        await upload(client)
 
         file1, file2 = await asyncio.gather(
-            client.upload_file(
-                content_bytes=data,
-                content_type='image/jpeg',
-                file_name=str(uuid.uuid4()),
-                bucket_id=bucket_id
-            ),
-            client.upload_file(
-                content_bytes=data,
-                content_type='image/jpeg',
-                file_name=str(uuid.uuid4()),
-                bucket_id=bucket_id
-            )
+            upload(client),
+            upload(client)
         )
 
         # should raise an error above if it fails, but we can double check
