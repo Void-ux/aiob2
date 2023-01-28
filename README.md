@@ -21,7 +21,7 @@ aiob2 is an asynchronous API wrapper for the [Backblaze B2 Bucket API](https://w
 
 It will allow you to interact with your B2 bucket, it's files and anything else that the B2 API allows in a modern, object-oriented fashion.
 
-**NOTE:** This API wrapper is by no means *complete* and has many endpoints to cover, though the main ones have been covered (they will be listed below)
+**NOTE:** There are API endpoints left to implement, eventually they will be added. To speed up this process you can submit a [pull request](https://github.com/Void-ux/aiob2/pulls) or [suggest it](https://github.com/Void-ux/aiob2/discussions/categories/ideas).
 
 ## Installation
 
