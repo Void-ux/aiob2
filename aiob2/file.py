@@ -92,12 +92,12 @@ class LargeFile(PartialFile):
         # but this'd defeat the purpose of the final double-check
         sha1 = hashlib.sha1(content_bytes).hexdigest()
 
-        part = await (await self._http.upload_part(
+        part = await self._http.upload_part(
             self.id,
             len(self._parts) + 1,
             content_bytes,
             sha1
-        ))
+        )
         part = LargeFilePart(part)
         self._parts.append(part)
         self._sha1_checksums.append(sha1)
