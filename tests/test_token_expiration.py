@@ -74,7 +74,7 @@ class TestTokenExpiration:
         dummy_info = BucketUploadInfo(
             upload_info.url,
             upload_info.token,
-            datetime.datetime.now() + datetime.timedelta(days=1)
+            datetime.datetime.now() - datetime.timedelta(days=1)
         )
         client._http._upload_urls[bucket_id] = [dummy_info]  # type: ignore
 
