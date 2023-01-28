@@ -62,12 +62,20 @@ class BucketUploadInfo(NamedTuple):
     created: datetime.datetime
     in_use: bool = False
 
+    @property
+    def expires(self) -> datetime.datetime:
+        return self.created + datetime.timedelta(days=1)
+
 
 class LargeFileUploadInfo(NamedTuple):
     url: str
     token: str
     created: datetime.datetime
     in_use: bool = False
+
+    @property
+    def expires(self) -> datetime.datetime:
+        return self.created + datetime.timedelta(days=1)
 
 
 class Route:
@@ -449,7 +457,7 @@ class HTTPClient:
     def _purge_expired_upload_urls(self, bucket_id: str) -> None:
         old = self._upload_urls[bucket_id]
         new = self._upload_urls[bucket_id] = list(filter(
-            lambda x: datetime.datetime.now() > x.created + datetime.timedelta(days=1),
+            lambda x: x.expires > datetime.datetime.now(),
             self._upload_urls[bucket_id]
         ))
 
@@ -547,7 +555,7 @@ class HTTPClient:
     def _purge_expired_upload_part_urls(self, large_file_id: str) -> None:
         old = self._upload_part_urls[large_file_id]
         new = self._upload_part_urls[large_file_id] = list(filter(
-            lambda x: datetime.datetime.now() > x.created + datetime.timedelta(days=1),
+            lambda x: x.expires > datetime.datetime.now(),
             self._upload_part_urls[large_file_id]
         ))
 
