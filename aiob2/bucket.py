@@ -146,7 +146,7 @@ class Client:
             The uploaded file.
         """
 
-        data = await (await self._http.upload_file(
+        data = await self._http.upload_file(
             content_bytes=content_bytes,
             content_type=content_type or 'b2/x-auto',
             file_name=file_name,
@@ -158,7 +158,7 @@ class Client:
             comments=comments,
             upload_timestamp=upload_timestamp,
             server_side_encryption=server_side_encryption
-        ))
+        )
         return File(data)
 
     async def upload_large_file(

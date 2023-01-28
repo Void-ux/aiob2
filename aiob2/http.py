@@ -12,12 +12,12 @@ from typing import (
     TYPE_CHECKING,
     Coroutine,
     Literal,
-    NamedTuple,
     Optional,
     Tuple,
     TypedDict,
     TypeVar,
     Union,
+    Type,
     Any,
     DefaultDict,
     Dict,
@@ -34,14 +34,14 @@ from .models.file import LargeFilePartPayload, PartialFilePayload, UploadPayload
 from .utils import MISSING
 
 if TYPE_CHECKING:
+    from typing_extensions import Self
+    from types import TracebackType
+
+    BE = TypeVar('BE', bound=BaseException)
     T = TypeVar('T')
     Response = Coroutine[Any, Any, T]
 
-__all__ = ('HTTPClient', )
-
 log = logging.getLogger(__name__)
-
-HTTPVerb = Literal['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
 
 
 class UploadURLPayload(TypedDict):
@@ -56,26 +56,97 @@ class LargeFileUploadURLPayload(TypedDict):
     authorizationToken: str
 
 
-class BucketUploadInfo(NamedTuple):
-    url: str
-    token: str
-    created: datetime.datetime
-    in_use: bool = False
+def handle_upload_file_headers(
+    file_name: str,
+    content_bytes: bytes,
+    content_type: str,
+    content_disposition: Optional[str],
+    content_language: Optional[List[str]],
+    expires: Optional[datetime.datetime],
+    content_encoding: Optional[List[Literal['gzip', 'compress', 'deflate', 'identity']]],
+    comments: Optional[Dict[str, str]],
+    upload_timestamp: Optional[datetime.datetime],
+    server_side_encryption: Optional[Literal['AES256']]
+) -> Dict[str, Any]:
+    headers: Dict[str, Union[str, int]] = {
+        'X-Bz-File-Name': quote(file_name),
+        'Content-Type': content_type,
+        'X-Bz-Content-Sha1': hashlib.sha1(content_bytes).hexdigest()
+    }
+
+    if content_disposition is not None:
+        reg = re.compile(r'(?P<display>inline|attachment)(?:\s*;\s*filename="(?P<filename>.*)?")?')
+        if not reg.search(content_disposition):
+            raise ValueError('The Content-Disposition header must be valid')
+
+        headers['X-Bz-Info-b2-content-disposition'] = quote(content_disposition)
+
+    if content_language is not None:
+        headers['X-Bz-Info-b2-content-language'] = quote(', '.join(content_language))
+
+    if expires is not None:
+        date = expires.astimezone(datetime.timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
+        headers['X-Bz-Info-b2-expires'] = quote(date)
+
+    if content_encoding is not None:
+        headers['X-Bz-Info-b2-content-encoding'] = quote(', '.join(content_encoding))
+
+    if comments is not None:
+        key, value = list(comments.items())[0]
+        headers[f'X-Bz-Info-{quote_plus(key)}'] = quote(value.encode('utf-8'))
+
+    if upload_timestamp is not None:
+        if datetime.datetime.now() < upload_timestamp:
+            raise ValueError('Future dates for upload timestamps are not supported')
+        if upload_timestamp < datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc):
+            raise ValueError('The upload timestamp needs to be after January 1st, 1970 UTC')
+
+        timestamp = int(upload_timestamp.timestamp() * 1000)
+        headers['X-Bz-Custom-Upload-Timestamp'] = str(timestamp)
+
+    if server_side_encryption is not None:
+        if server_side_encryption != 'AES256':
+            raise TypeError('Backblaze currently only supports AES256 server-side encryption')
+
+        headers['X-Bz-Server-Side-Encryption'] = server_side_encryption
+
+    return headers
+
+
+class UploadInfo:
+    __slots__ = ('url', 'token', 'created', 'in_use')
+
+    def __init__(self, url: str, token: str, created: datetime.datetime, in_use: bool = False):
+        self.url = url
+        self.token = token
+        self.created = created
+        self.in_use = in_use
 
     @property
     def expires(self) -> datetime.datetime:
         return self.created + datetime.timedelta(days=1)
 
+    def __enter__(self) -> Self:
+        self.in_use = True
+        return self
 
-class LargeFileUploadInfo(NamedTuple):
-    url: str
-    token: str
-    created: datetime.datetime
-    in_use: bool = False
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BE]],
+        exc: Optional[BE],
+        traceback: Optional[TracebackType],
+    ) -> None:
+        self.in_use = False
 
-    @property
-    def expires(self) -> datetime.datetime:
-        return self.created + datetime.timedelta(days=1)
+
+class BucketUploadInfo(UploadInfo):
+    def __repr__(self) -> str:
+        return f'<BucketUploadInfo> url={self.url} token={self.token} created={self.created} in_use={self.in_use}'
+
+
+class LargeFileUploadInfo(UploadInfo):
+    def __repr__(self) -> str:
+        return f'<LargeFileUploadInfo> url={self.url} token={self.token} created={self.created} in_use={self.in_use}'
 
 
 class Route:
@@ -295,6 +366,7 @@ class HTTPClient:
         *,
         bucket_id: Optional[str] = None,
         large_file_id: Optional[str] = None,
+        upload_info: Optional[Union[BucketUploadInfo, LargeFileUploadInfo]] = None,
         **kwargs: Any
     ) -> Any:
         """Send a HTTP request to the `route.url`, with HTTP error code handling defined by the B2 API docs.
@@ -312,7 +384,7 @@ class HTTPClient:
         # we'll use this variable to tell whether or not to refresh an upload
         # url url/token, or the account's api url/token. this'll only be `True`
         # if we're using b2_upload_file or b2_upload_part
-        uploading_file = bucket_id is not None or large_file_id is not None
+        uploading_file = upload_info is not None
 
         if self._session is None:
             self._session = await self._generate_session()
@@ -333,7 +405,13 @@ class HTTPClient:
             route = Route(route.method, route.path, base=self._api_url, **route.parameters)
 
         for tries in range(5):
+            if upload_info:
+                upload_info.in_use = True
+
             async with self._session.request(route.method, route.url, headers=headers, **kwargs) as response:
+                if upload_info:
+                    upload_info.in_use = False
+
                 if uploading_file:
                     log.debug(
                         '%s %s with a payload of %s bytes has returned %s',
@@ -362,82 +440,65 @@ class HTTPClient:
                 if response.status == 429:
                     raise RateLimited(response, data)
 
-                if response.status in {408, 500, 503}:
-                    # Backblaze recommends calling b2_get_upload_url again
-                    # this wasn't shortened into a single 'if' to preserve readability
-                    if response.status == 503 and uploading_file:
-                        pass
-                    else:
-                        log.warning(
-                            '%s %s returned %s (%s), sleeping for %s',
-                            route.method,
-                            route.url,
-                            response.status,
-                            data['code'],
-                            1 + tries * 2
-                        )
-                        await asyncio.sleep(1 + tries * 2)
+                if response.status in {408, 500}:
+                    log.warning(
+                        '%s %s returned %s (%s), sleeping for %s',
+                        route.method,
+                        route.url,
+                        response.status,
+                        data['code'],
+                        1 + tries * 2
+                    )
+                    await asyncio.sleep(1 + tries * 2)
+                    continue
 
+                # Backblaze recommends calling b2_get_upload_(part_)url again with 503s
                 if response.status == 401 or (response.status == 503 and uploading_file):
                     if route.path == '/b2_authorize_account':
                         raise Unauthorized(response, data)
 
                     if data['code'] not in (
                         'expired_auth_token',  # auth token has expired (created over 24 hours ago)
-                        'bad_auth_token',  # auth token was not valid to begin with
-                        'service_unavailable',  # internal server error i.e. 503
-                        'auth_token_limit'  # we're uploading in parallel
+                        'bad_auth_token',      # auth token was not valid to begin with
+                        'service_unavailable'  # internal server error i.e. 503
                     ):
                         raise Unauthorized(response, data)
 
-                    log.info(
-                        '%s %s has returned %s (%s), most likely because it expired, attempting to re-authenticate',
-                        route.method,
-                        route.url,
-                        response.status,
-                        data['code']
-                    )
+                    if uploading_file and upload_info is not None:
+                        # we need to remove this token to prevent it from being
+                        # used again, since find_upload_(part_)url always returns
+                        # the first element found. this is only for edge-cases when
+                        # Backblaze actually invalidates the token, since aiob2 will
+                        # prevent expired tokens from being used.
 
-                    # b2_upload_file, b2_upload_part
-                    if uploading_file:
-                        # we need to remove this expired token to
-                        # prevent it from being used again, since
-                        # find_upload_(part_)url always returns the
-                        # first element found
-
-                        if bucket_id is not None:
+                        if bucket_id is not None and isinstance(upload_info, BucketUploadInfo):
                             old_upload_info = \
                                 [i for i in self._upload_urls[bucket_id] if i.token == headers['Authorization']]
-                            # we'll avoid removing upload URLs if we're uploading in
-                            # parallel, since the previous token is still valid, we
-                            # just need to create a new one
-                            if data['code'] != 'auth_token_limit':
-                                self._upload_urls[bucket_id].remove(old_upload_info[0])
+                            self._upload_urls[bucket_id].remove(upload_info)
+                            log.debug('Removed an expired/invalid upload URL for bucket ID %s', bucket_id)
 
                             upload_info = await self._find_upload_url(bucket_id)
-                        elif large_file_id is not None:
+                        elif large_file_id is not None and isinstance(upload_info, LargeFileUploadInfo):
                             old_upload_info = \
                                 [i for i in self._upload_part_urls[large_file_id] if i.token == headers['Authorization']]
-                            # we'll avoid removing upload URLs if we're uploading in
-                            # parallel, since the previous token is still valid, we
-                            # just need to create a new one
-                            if data['code'] != 'auth_token_limit':
-                                self._upload_part_urls[large_file_id].remove(old_upload_info[0])
+                            self._upload_part_urls[large_file_id].remove(old_upload_info[0])
+                            log.debug('Removed an expired/invalid upload URL for large file ID %s', large_file_id)
 
                             upload_info = await self._find_upload_part_url(large_file_id)
 
                         # reset the upload URL and token and retry
-                        headers['Authorization'] = upload_info.token  # type: ignore
+                        headers['Authorization'] = upload_info.token
                         route = Route(
                             route.method,
                             route.path,
-                            base=upload_info.url,  # type: ignore
+                            base=upload_info.url,
                             parameters=route.parameters
                         )
 
                         log.info('Re-authenticated upload URL and upload URL token')
                     else:
                         # download_by_file_x also uses the account authorization token
+                        # so we don't need a seperate elif
                         await self._authorize_account()
                         headers['Authorization'] = self._authorization_token
 
@@ -514,43 +575,25 @@ class HTTPClient:
         comments: Optional[Dict[str, str]],
         upload_timestamp: Optional[datetime.datetime],
         server_side_encryption: Optional[Literal['AES256']]
-    ) -> Response[UploadPayload]:
+    ) -> UploadPayload:
         upload_info = await self._find_upload_url(bucket_id)
 
-        headers: Dict[str, Union[str, int]] = {
-            'Authorization': upload_info.token,
-            'X-Bz-File-Name': quote(file_name),
-            'Content-Type': content_type,
-            'X-Bz-Content-Sha1': hashlib.sha1(content_bytes).hexdigest()
-        }
-        if content_disposition:
-            reg = re.compile(r'(?P<display>inline|attachment)(?:\s*;\s*filename="(?P<filename>.*)?")?')
-            assert reg.search(content_disposition), 'The content_disposition header must be valid, see MDN docs'
-            headers['X-Bz-Info-b2-content-disposition'] = quote(content_disposition)
-        if content_language:
-            headers['X-Bz-Info-b2-content-language'] = quote(', '.join(content_language))
-        if expires:
-            date = expires.astimezone(datetime.timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
-            headers['X-Bz-Info-b2-expires'] = quote(date)
-        if content_encoding:
-            headers['X-Bz-Info-b2-content-encoding'] = quote(', '.join(content_encoding))
-        if comments:
-            key, value = list(comments.items())[0]
-            headers[f'X-Bz-Info-{quote_plus(key)}'] = quote(value.encode('utf-8'))
-        if upload_timestamp:
-            assert datetime.datetime.now() >= upload_timestamp, 'Future dates for upload timestamps are not supported'
-
-            timestamp = int(upload_timestamp.timestamp() * 1000)
-            assert timestamp.bit_length() <= 64, \
-                'The upload timestamp must be 64 bits when turned into a UNIX timestamp in milliseconds'
-
-            headers['X-Bz-Custom-Upload-Timestamp'] = str(timestamp)
-        if server_side_encryption:
-            assert server_side_encryption == 'AES256', 'Backblaze currently only supports AES256 server-side encryption'
-            headers['X-Bz-Server-Side-Encryption'] = server_side_encryption
+        headers = handle_upload_file_headers(
+            file_name,
+            content_bytes,
+            content_type,
+            content_disposition,
+            content_language,
+            expires,
+            content_encoding,
+            comments,
+            upload_timestamp,
+            server_side_encryption
+        )
+        headers['Authorization'] = upload_info.token
 
         route = Route('POST', '', base=upload_info.url)
-        return self.request(route, bucket_id=bucket_id, headers=headers, data=content_bytes)
+        return await self.request(route, bucket_id=bucket_id, upload_info=upload_info, headers=headers, data=content_bytes)
 
     def _purge_expired_upload_part_urls(self, large_file_id: str) -> None:
         old = self._upload_part_urls[large_file_id]
@@ -608,7 +651,7 @@ class HTTPClient:
         part_number: int,
         content_bytes: bytes,
         sha1: str
-    ) -> Response[LargeFilePartPayload]:
+    ) -> LargeFilePartPayload:
         upload_info = await self._find_upload_part_url(file_id)
 
         content_length = len(content_bytes)
@@ -627,7 +670,7 @@ class HTTPClient:
         }
 
         route = Route('POST', '', base=upload_info.url)
-        return self.request(route, large_file_id=file_id, headers=headers, data=content_bytes)
+        return await self.request(route, large_file_id=file_id, headers=headers, data=content_bytes)
 
     def finish_large_file(self, file_id: str, sha1_list: list[str]) -> Response[UploadPayload]:
         headers = {
