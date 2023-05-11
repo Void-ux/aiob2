@@ -140,6 +140,12 @@ class UploadInfo:
 
 
 class BucketUploadInfo(UploadInfo):
+    def __init__(self, url: str, token: str, created: datetime.datetime, in_use: bool = False):
+        self.url = url
+        self.token = token
+        self.created = created
+        self.in_use = in_use
+
     def __repr__(self) -> str:
         return f'<BucketUploadInfo> url={self.url} token={self.token} created={self.created} in_use={self.in_use}'
 
@@ -217,9 +223,8 @@ class HTTPClient:
         self._upload_urls: DefaultDict[str, List[BucketUploadInfo]] = defaultdict(list)
         self._upload_part_urls: DefaultDict[str, List[LargeFileUploadInfo]] = defaultdict(list)
 
-        # used when first authorizing to update the MISSING headers
-        # and when they're refreshed, i.e. when they expire
-        self.refresh_headers: bool = True
+        # set upon account authorization
+        self._authorization_lock: asyncio.Lock = asyncio.Lock()
 
         # prevent circular import
         from . import __version__
@@ -266,6 +271,15 @@ class HTTPClient:
         self._recommended_part_size: int = response['recommendedPartSize']
         self._absolute_minimum_part_size: int = response['absoluteMinimumPartSize']
         self._s3_api: str = response['s3ApiUrl']
+
+    async def _find_authorization_token(self) -> str:
+        async with self._authorization_lock:
+            if self._authorization_token is MISSING:
+                log.info('Authenticating using static application key')
+                await self._authorize_account()
+                log.debug('Logged in with account ID %s', self._account_id)
+
+            return self._authorization_token
 
     async def _get_upload_url(self, bucket_id: str) -> BucketUploadInfo:
         """Fetches the upload URL and token for a specific bucket or a large file.
@@ -397,10 +411,8 @@ class HTTPClient:
         # token, e.g. b2_get_upload_url, download_file_by_x, etc.
         # only b2_upload_file and b2_upload_part use custom tokens, which must first
         # go through b2_get_upload_(part_)url, so they can't be the first request.
-        if headers['Authorization'] is MISSING and route.path != '/b2_authorize_account':
-            log.info('Authenticating using static application key')
-            await self._authorize_account()
-            log.debug('Logged in with account ID %s', self._account_id)
+        if self._authorization_token is MISSING and route.path != '/b2_authorize_account':
+            await self._find_authorization_token()
             headers['Authorization'] = self._authorization_token
             route = Route(route.method, route.path, base=self._api_url, **route.parameters)
 
