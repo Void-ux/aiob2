@@ -242,7 +242,8 @@ class DownloadedFile(B2Object):
 
         self.content_disposition: Optional[str] = headers.get('content-disposition')
         self.content_language: Optional[str] = headers.get('content-language')
-        if (expires := headers.get('cache-control')) is not None:
+        self.cache_control: Optional[str] = headers.get('cache-control')
+        if (expires := headers.get('expires')) is not None:
             expires = datetime.datetime.strptime(expires, '%a, %d %b %Y %H:%M:%S %Z')
         else:
             expires = None
