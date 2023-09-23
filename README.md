@@ -27,7 +27,7 @@ It will allow you to interact with your B2 bucket, it's files and anything else 
 
 ---
 
-aiob2 is compatible with Python 3.8+ (this is an estimate). To install aiob2, run the following command in your (virtual) environment.
+aiob2 is compatible with Python 3.8+. To install aiob2, run the following command in your (virtual) environment.
 
 ```shell
 pip install aiob2
