@@ -176,7 +176,7 @@ class Client:
         bucket_id: str
             The ID of the bucket to upload to.
         file_name: str
-            The name of the file.
+            The name of the remote file.
         content_type: str
             The content type of the file once every part is combined together.
 
