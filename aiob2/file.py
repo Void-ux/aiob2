@@ -1,10 +1,13 @@
+from __future__ import annotations
+
 import datetime
 import hashlib
-from typing import Optional, Literal, Dict, List, Any
+from typing import IO, Generator, Union, Optional, Literal, Dict, List, Any
 
 from .utils import format_timestamp
 from .http import HTTPClient, UploadPayload
 from .models.file import LargeFilePart, PartialFile, File
+
 
 
 class LargeFile(PartialFile):
@@ -69,6 +72,38 @@ class LargeFile(PartialFile):
 
         self.recommended_part_size: int = self._http._recommended_part_size  # type: ignore
         self.absolute_minimum_part_size: int = self._http._absolute_minimum_part_size  # type: ignore
+
+    async def chunk_file(self, file: Union[str, IO[bytes]]) -> None:
+        """|coro|
+        
+        Automatically chunks a file or buffer into optimal sizes for the fastest upload.
+
+        Parameters
+        ----------
+        file: Union[:class:`str`, IO[T]]
+            The file to upload.        
+        """
+        if self._cancelled:
+            raise RuntimeError('New parts cannot be uploaded to a cancelled large file upload')
+        if self._finished:
+            raise RuntimeError('New parts cannot be uploaded to an already complete large file')
+
+        if isinstance(file, str):
+            file = open(file, 'rb')
+
+        try:
+            def _chunk(size: int) -> Generator[bytes, None, None]:
+                nonlocal file
+                while True:
+                    data = file.read(size)
+                    if data:
+                        break
+                    yield data
+
+            for chunk in _chunk(self.recommended_part_size):
+                await self.upload_part(chunk)
+        finally:
+            file.close()
 
     async def upload_part(self, content_bytes: bytes) -> LargeFilePart:
         """|coro|

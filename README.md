@@ -1,7 +1,5 @@
 # aiob2
 
----
-
 <p align="center">
     <a href="https://www.python.org/downloads/">
         <img src="https://img.shields.io/pypi/pyversions/aiob2?style=for-the-badge" alt="Python version">
@@ -19,7 +17,7 @@
 
 aiob2 is an asynchronous API wrapper for the [Backblaze B2 Bucket API](https://www.backblaze.com/b2/docs/calling.html).
 
-It will allow you to interact with your B2 bucket, it's files and anything else that the B2 API allows in a modern, object-oriented fashion.
+It will allow you to interact with your B2 bucket and its files in a modern, object-oriented fashion.
 
 **NOTE:** There are API endpoints left to implement, eventually they will be added. To speed up this process you can submit a [pull request](https://github.com/Void-ux/aiob2/pulls) or [suggest it](https://github.com/Void-ux/aiob2/discussions/categories/ideas).
 
@@ -70,7 +68,5 @@ And that's it! `upload_file()` returns a `File` object that neatly wraps everyth
 The `File` object's documentation can be found [here](https://aiob2.readthedocs.io/en/latest/pages/api.html#aiob2.File)
 
 ## License
-
----
 
 This project is released under the [MIT License](https://opensource.org/licenses/MIT).

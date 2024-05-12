@@ -178,16 +178,17 @@ class Route:
         path: str,
         *,
         base: Optional[str] = None,
+        query_parameters: Optional = None,
         **parameters: Any
     ) -> None:
         self.method: Literal['GET', 'POST', 'PUT', 'DELETE'] = method
         self.path = path
         self.parameters = parameters
+        self.query_parameters = query_parameters
         url = (base or self.BASE) + self.path
         if parameters:
             url = url.format_map({k: quote(v) if isinstance(v, str) else v for k, v in self.parameters.items()})
-
-        self.url: URL = URL(url, encoded=True)
+        self.url: URL = URL(url, encoded=True).with_query(query_parameters)
 
     def __repr__(self) -> str:
         return f'{self.method} {str(self.url)}'
@@ -414,7 +415,7 @@ class HTTPClient:
         if self._authorization_token is MISSING and route.path != '/b2_authorize_account':
             await self._find_authorization_token()
             headers['Authorization'] = self._authorization_token
-            route = Route(route.method, route.path, base=self._api_url, **route.parameters)
+            route = Route(route.method, route.path, base=self._api_url, query_parameters=route.query_parameters, **route.parameters)
 
         for tries in range(5):
             if upload_info:
@@ -722,6 +723,7 @@ class HTTPClient:
         self,
         *,
         file_id: str,
+        range_: Optional[str] = None,
         content_disposition: Optional[str] = None,
         content_language: Optional[str] = None,
         expires: Optional[str] = None,
@@ -732,6 +734,10 @@ class HTTPClient:
     ) -> Response[Tuple[bytes, Dict[str, Any]]]:
         headers = {
             'Authorization': self._authorization_token,
+            'Range': range_,
+        }
+        headers = {key: value for key, value in headers.items() if value is not None}
+        query_parameters = {
             'b2ContentDisposition': content_disposition,
             'b2ContentLanguage': content_language,
             'b2Expires': expires,
@@ -740,14 +746,15 @@ class HTTPClient:
             'b2ContentType': content_type,
             'serverSideEncryption': server_side_encryption
         }
-        headers = {key: value for key, value in headers.items() if value is not None}
+        query_parameters = {key: value for key, value in query_parameters.items() if value is not None}
         params = {
             'fileId': file_id
         }
         route = Route(
             'GET',
             '/b2api/v2/b2_download_file_by_id',
-            base=self._download_url
+            base=self._download_url,
+            query_parameters=query_parameters,
         )
 
         return self.request(route, headers=headers, params=params)
@@ -757,6 +764,7 @@ class HTTPClient:
         *,
         file_name: str,
         bucket_name: str,
+        range_: Optional[str] = None,
         content_disposition: Optional[str] = None,
         content_language: Optional[str] = None,
         expires: Optional[str] = None,
@@ -767,6 +775,10 @@ class HTTPClient:
     ) -> Response[Tuple[bytes, Dict[str, Any]]]:
         headers = {
             'Authorization': self._authorization_token,
+            'Range': range_,
+        }
+        headers = {key: value for key, value in headers.items() if value is not None}
+        query_parameters = {
             'b2ContentDisposition': content_disposition,
             'b2ContentLanguage': content_language,
             'b2Expires': expires,
@@ -775,11 +787,12 @@ class HTTPClient:
             'b2ContentType': content_type,
             'serverSideEncryption': server_side_encryption
         }
-        headers = {key: value for key, value in headers.items() if value is not None}
+        query_parameters = {key: value for key, value in query_parameters.items() if value is not None}
         route = Route(
             'GET',
             '/file/{bucket_name}/{file_name}',
             base=self._download_url,
+            query_parameters=query_parameters,
             bucket_name=bucket_name,
             file_name=file_name
         )
