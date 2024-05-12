@@ -176,7 +176,7 @@ class Client:
         bucket_id: str
             The ID of the bucket to upload to.
         file_name: str
-            The name of the file.
+            The name of the remote file.
         content_type: str
             The content type of the file once every part is combined together.
 
@@ -229,6 +229,7 @@ class Client:
         self,
         file_id: str,
         *,
+        range_: Optional[str] = None,
         content_disposition: Optional[str] = None,
         content_language: Optional[str] = None,
         expires: Optional[str] = None,
@@ -243,6 +244,10 @@ class Client:
         -----------
         file_id: :class:`str`
             The file id of the file to be downloaded.
+        range_: Optional[:class:`str`]
+            A standard byte-range request, which will return just part of the stored file. For
+            example, "bytes=0,99" selects bytes 0 through 99 (inclusive) of the file, so it will
+            return the first 100 bytes.
         content_disposition: Optional[:class:`str`]
             Overrides the current 'b2-content-disposition' specified when the file was uploaded.
         content_language: Optional[:class:`str`]
@@ -267,6 +272,7 @@ class Client:
 
         data = await self._http.download_file_by_id(
             file_id=file_id,
+            range_=range_,
             content_disposition=content_disposition,
             content_language=content_language,
             expires=expires,
@@ -282,6 +288,7 @@ class Client:
         file_name: str,
         bucket_name: str,
         *,
+        range_: Optional[str] = None,
         content_disposition: Optional[str] = None,
         content_language: Optional[str] = None,
         expires: Optional[str] = None,
@@ -299,6 +306,10 @@ class Client:
         bucket_name: :class:`str`
             The bucket name of the file to be downloaded. This should only be specified if you have specified
             file_name and not file_id.
+        range_: Optional[:class:`str`]
+            A standard byte-range request, which will return just part of the stored file. For
+            example, "bytes=0,99" selects bytes 0 through 99 (inclusive) of the file, so it will
+            return the first 100 bytes.
         content_disposition: Optional[:class:`str`]
             Overrides the current 'b2-content-disposition' specified when the file was uploaded.
         content_language: Optional[:class:`str`]
@@ -324,6 +335,7 @@ class Client:
         data = await self._http.download_file_by_name(
             file_name=file_name,
             bucket_name=bucket_name,
+            range_=range_,
             content_disposition=content_disposition,
             content_language=content_language,
             expires=expires,
