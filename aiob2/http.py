@@ -178,17 +178,16 @@ class Route:
         path: str,
         *,
         base: Optional[str] = None,
-        query_parameters: Optional = None,
         **parameters: Any
     ) -> None:
         self.method: Literal['GET', 'POST', 'PUT', 'DELETE'] = method
         self.path = path
         self.parameters = parameters
-        self.query_parameters = query_parameters
         url = (base or self.BASE) + self.path
         if parameters:
             url = url.format_map({k: quote(v) if isinstance(v, str) else v for k, v in self.parameters.items()})
-        self.url: URL = URL(url, encoded=True).with_query(query_parameters)
+
+        self.url: URL = URL(url, encoded=True)
 
     def __repr__(self) -> str:
         return f'{self.method} {str(self.url)}'
@@ -415,7 +414,7 @@ class HTTPClient:
         if self._authorization_token is MISSING and route.path != '/b2_authorize_account':
             await self._find_authorization_token()
             headers['Authorization'] = self._authorization_token
-            route = Route(route.method, route.path, base=self._api_url, query_parameters=route.query_parameters, **route.parameters)
+            route = Route(route.method, route.path, base=self._api_url, **route.parameters)
 
         for tries in range(5):
             if upload_info:
