@@ -95,8 +95,8 @@ class LargeFile(PartialFile):
             def _chunk(size: int) -> Generator[bytes, None, None]:
                 nonlocal file
                 while True:
-                    data = file.read(size)
-                    if data:
+                    data = file.read(size)  # pyright: ignore
+                    if not data:
                         break
                     yield data
 
