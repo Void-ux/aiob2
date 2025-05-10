@@ -15,7 +15,7 @@
     </a>
 </p>
 
-aiob2 is an asynchronous API wrapper for the [Backblaze B2 Bucket API](https://www.backblaze.com/b2/docs/calling.html).
+aiob2 is an asynchronous API wrapper for the [Backblaze B2 Native API](https://www.backblaze.com/apidocs/introduction-to-the-b2-native-api).
 
 It will allow you to interact with your B2 bucket and its files in a modern, object-oriented fashion.
 

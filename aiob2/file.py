@@ -1,13 +1,30 @@
 from __future__ import annotations
 
+import asyncio
 import datetime
 import hashlib
-from typing import IO, Generator, Union, Optional, Literal, Dict, List, Any
+import logging
+import math
+import os
+from pathlib import Path
+from typing import Optional, Literal, Dict, List, Any
+
+import aiofiles
+
+from aiob2.errors import BackblazeServerError
 
 from .utils import format_timestamp
 from .http import HTTPClient, UploadPayload
 from .models.file import LargeFilePart, PartialFile, File
 
+log = logging.getLogger(__name__)
+
+
+async def _get_part(path: os.PathLike[str], n: int, *, part_size: int) -> bytes:
+    offset = n * part_size
+    async with aiofiles.open(path, "rb") as file:
+        await file.seek(offset)
+        return await file.read(part_size)
 
 
 class LargeFile(PartialFile):
@@ -73,7 +90,7 @@ class LargeFile(PartialFile):
         self.recommended_part_size: int = self._http._recommended_part_size  # type: ignore
         self.absolute_minimum_part_size: int = self._http._absolute_minimum_part_size  # type: ignore
 
-    async def chunk_file(self, file: Union[str, IO[bytes]]) -> None:
+    async def chunk_file(self, file: str | os.PathLike[str], workers: int = 1) -> None:
         """|coro|
         
         Automatically chunks a file or buffer into optimal sizes for the fastest upload.
@@ -88,24 +105,46 @@ class LargeFile(PartialFile):
         if self._finished:
             raise RuntimeError('New parts cannot be uploaded to an already complete large file')
 
-        if isinstance(file, str):
-            file = open(file, 'rb')
+        if not isinstance(file, Path):
+            file = Path(file)
 
-        try:
-            def _chunk(size: int) -> Generator[bytes, None, None]:
-                nonlocal file
-                while True:
-                    data = file.read(size)  # pyright: ignore
-                    if not data:
+        queue = asyncio.Queue[int]()
+        num_chunks = math.ceil(file.stat().st_size / self.recommended_part_size)
+        if num_chunks == 0:
+            raise RuntimeError('Invalid file')
+
+        for i in range(num_chunks):
+            queue.put_nowait(i)
+
+        async def worker(worker_num: int):
+            upload_url = await self._http._get_upload_part_url(self.id)  # pyright: ignore[reportPrivateUsage]
+            while True:
+                try:
+                    segment = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+
+                for _ in range(3):
+                    log.debug('Worker %s is uploading part %s', worker_num, segment)
+                    try:
+                        chunk = await _get_part(file, segment, part_size=self.recommended_part_size)
+                        sha1 = hashlib.sha1(chunk).hexdigest()
+                        part = await self._http.upload_part(self.id, segment + 1, chunk, sha1, upload_info=upload_url)
+                        # NOTE not ideal
+                        self._parts.append(LargeFilePart(part))
                         break
-                    yield data
+                    except BackblazeServerError:
+                        pass
+        
+        workers_ = [worker(i) for i in range(1, workers + 1)]
+        await asyncio.gather(*workers_, return_exceptions=False)
+        self._parts.sort(key=lambda x: x.part_number)
 
-            for chunk in _chunk(self.recommended_part_size):
-                await self.upload_part(chunk)
-        finally:
-            file.close()
-
-    async def upload_part(self, content_bytes: bytes) -> LargeFilePart:
+    async def upload_part(
+        self,
+        content_bytes: bytes,
+        part_number: int
+    ) -> LargeFilePart:
         """|coro|
 
         Uploads a part of the large file.
@@ -127,12 +166,7 @@ class LargeFile(PartialFile):
         # but this'd defeat the purpose of the final double-check
         sha1 = hashlib.sha1(content_bytes).hexdigest()
 
-        part = await self._http.upload_part(
-            self.id,
-            len(self._parts) + 1,
-            content_bytes,
-            sha1
-        )
+        part = await self._http.upload_part(self.id, part_number, content_bytes, sha1)
         part = LargeFilePart(part)
         self._parts.append(part)
         self._sha1_checksums.append(sha1)
