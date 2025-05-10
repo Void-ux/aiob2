@@ -31,13 +31,11 @@ from yarl import URL
 from .errors import BackblazeServerError, Forbidden, HTTPException, NotFound, RateLimited, Unauthorized
 from .models.account import AccountAuthorizationPayload, Permissions
 from .models.file import LargeFilePartPayload, PartialFilePayload, UploadPayload
-from .models.bucket import ListBucketPayload
 from .utils import MISSING
 
 if TYPE_CHECKING:
     from typing_extensions import Self
     from types import TracebackType
-    from .models.bucket import BucketType
 
     BE = TypeVar('BE', bound=BaseException)
     T = TypeVar('T')
