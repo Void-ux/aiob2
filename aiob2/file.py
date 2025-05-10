@@ -90,7 +90,7 @@ class LargeFile(PartialFile):
         self.recommended_part_size: int = self._http._recommended_part_size  # type: ignore
         self.absolute_minimum_part_size: int = self._http._absolute_minimum_part_size  # type: ignore
 
-    async def chunk_file(self, file: str | os.PathLike[str], workers: int = 1) -> None:
+    async def chunk_file(self, file: str | os.PathLike[str], workers: int = 1, *, chunk_size: int | None = None) -> None:
         """|coro|
         
         Automatically chunks a file or buffer into optimal sizes for the fastest upload.
@@ -98,7 +98,11 @@ class LargeFile(PartialFile):
         Parameters
         ----------
         file: Union[:class:`str`, IO[T]]
-            The file to upload.        
+            The file to upload.
+        workers: :class:`int`
+            How many chunks to upload at once.
+        chunk_size: Union[:class:`int`, :class:`None`]
+            Override the recommended part size.
         """
         if self._cancelled:
             raise RuntimeError('New parts cannot be uploaded to a cancelled large file upload')
@@ -109,7 +113,7 @@ class LargeFile(PartialFile):
             file = Path(file)
 
         queue = asyncio.Queue[int]()
-        num_chunks = math.ceil(file.stat().st_size / self.recommended_part_size)
+        num_chunks = math.ceil(file.stat().st_size / (chunk_size or self.recommended_part_size))
         if num_chunks == 0:
             raise RuntimeError('Invalid file')
 
@@ -127,7 +131,7 @@ class LargeFile(PartialFile):
                 for _ in range(3):
                     log.debug('Worker %s is uploading part %s', worker_num, segment)
                     try:
-                        chunk = await _get_part(file, segment, part_size=self.recommended_part_size)
+                        chunk = await _get_part(file, segment, part_size=chunk_size or self.recommended_part_size)
                         sha1 = hashlib.sha1(chunk).hexdigest()
                         part = await self._http.upload_part(self.id, segment + 1, chunk, sha1, upload_info=upload_url)
                         # NOTE not ideal

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "aiob2"
-version = "0.9.0"
+version = "0.9.1"
 description = "A simple and easy to use async wrapper for Backblaze's B2 bucket API."
 license = "MIT"
 authors = ["Dan <the.void.altacc@gmail.com>"]
@@ -36,7 +36,6 @@ pytest-asyncio = "^0.19.0"
 furo = "^2022.12.7"
 sphinxcontrib-trio = "^1.1.2"
 pytest-order = "^1.0.1"
-pytest-env = "^0.8.1"
 
 [tool.pyright]
 typeCheckingVersion = "strict"
