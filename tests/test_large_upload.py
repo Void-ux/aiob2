@@ -19,20 +19,8 @@ class TestLargeUpload:
 
         file_name = str(uuid.uuid4())
         comments = {'foo': 'bar', 'spam': 'eggs'}
-        large_file = await client.upload_large_file(bucket_id, file_name, comments=comments)
-
-        size = 0
-        with open(path, 'rb') as file:
-            while True:
-                # ideally we'd use the recommended_part_size, but
-                # our test payload isn't above 100mb (typical
-                # recommended part size).
-                data = file.read(large_file.absolute_minimum_part_size)
-                if len(data) == 0:
-                    break
-                await large_file.upload_part(content_bytes=data)
-                size += len(data)
-
+        large_file = await client.start_large_file_upload(bucket_id, file_name, comments=comments)
+        await large_file.chunk_file(path, chunk_size=10_000_000)
         file = await large_file.finish()
 
         # uploading one part isn't a proper test, so we'll ensure
@@ -41,7 +29,7 @@ class TestLargeUpload:
 
         assert file.name == file_name
         assert file.bucket_id == bucket_id
-        assert file.content_length == size
+        assert file.content_length == path.stat().st_size
 
         ValueStorage.test_large_upload_file = file
 
