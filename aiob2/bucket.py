@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 import logging
 from typing import Optional, Literal, Dict, List, Any
@@ -7,7 +9,7 @@ import aiohttp
 from .models import (
     File,
     DeletedFile,
-    DownloadedFile
+    DownloadedFile,
 )
 from .http import HTTPClient
 from .file import LargeFile
@@ -161,7 +163,7 @@ class Client:
         )
         return File(data)
 
-    async def upload_large_file(
+    async def start_large_file_upload(
         self,
         bucket_id: str,
         file_name: str,
@@ -169,7 +171,8 @@ class Client:
         upload_timestamp: Optional[datetime.datetime] = None,
         comments: Optional[Dict[Any, Any]] = None
     ) -> LargeFile:
-        """Creates a large file to upload parts/chunks to incrementally.
+        """Creates a large file to upload parts/chunks to incrementally. See `LargeFile.upload_part` and
+        `LargeFile.chunk_file`.
 
         Parameters
         ----------
