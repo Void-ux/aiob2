@@ -31,11 +31,13 @@ from yarl import URL
 from .errors import BackblazeServerError, Forbidden, HTTPException, NotFound, RateLimited, Unauthorized
 from .models.account import AccountAuthorizationPayload, Permissions
 from .models.file import LargeFilePartPayload, PartialFilePayload, UploadPayload
+from .models.bucket import ListBucketPayload
 from .utils import MISSING
 
 if TYPE_CHECKING:
     from typing_extensions import Self
     from types import TracebackType
+    from .models.bucket import BucketType
 
     BE = TypeVar('BE', bound=BaseException)
     T = TypeVar('T')
@@ -170,7 +172,7 @@ class Route:
         This is a special cased kwargs. Anything passed to these will substitute it's key to value in the `path`.
     """
 
-    BASE: str = 'https://api.backblazeb2.com/b2api/v2'
+    BASE: str = 'https://api.backblazeb2.com/b2api/v1'
 
     def __init__(
         self,
@@ -754,7 +756,7 @@ class HTTPClient:
         }
         route = Route(
             'GET',
-            '/b2api/v2/b2_download_file_by_id',
+            '/b2api/v1/b2_download_file_by_id',
             base=self._download_url,
             query_parameters=query_parameters,
         )
@@ -800,3 +802,26 @@ class HTTPClient:
         )
 
         return self.request(route, headers=headers)
+
+    def get_buckets(
+        self,
+        *,
+        id: str | None = None,
+        name: str | None = None,
+        types: List[BucketType] | None = None
+    ) -> Response[ListBucketPayload]:
+        data: Dict[str, Any] = {'accountId': self._account_id}
+        if id is not None:
+            data['id'] = id
+        if name is not None:
+            data['name'] = name
+        if types is not None:
+            data['types'] = types
+
+        route = Route('GET', '/b2api/v2/b2_list_buckets')
+        return self.request(route, data=data)
+
+    def delete_bucket(self, bucket_id: str) -> Response[None]:
+        route = Route('POST', '/b2api/v2/b2_delete_bucket')
+        return self.request(route, data={'accountId': self._account_id, 'bucketId': bucket_id})
+
