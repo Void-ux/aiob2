@@ -76,9 +76,7 @@ class Client:
         await self.close()
 
     async def close(self):
-        # This is really only possible if a Client is instantiated and no request is ever made
-        if isinstance(self._http._session, aiohttp.ClientSession):  # type: ignore
-            await self._http._session.close()  # type: ignore
+        await self._http._close()
 
     # TODO add all possible options; overload for customer encryption?
     async def upload_file(
