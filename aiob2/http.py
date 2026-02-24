@@ -10,7 +10,10 @@ import sys
 from collections import defaultdict
 from typing import (
     TYPE_CHECKING,
+    Awaitable,
+    Callable,
     Coroutine,
+    Generic,
     Literal,
     Optional,
     Tuple,
@@ -156,6 +159,55 @@ class LargeFileUploadInfo(UploadInfo):
         return f'<LargeFileUploadInfo> url={self.url} token={self.token} created={self.created} in_use={self.in_use}'
 
 
+UI = TypeVar('UI', bound=UploadInfo)
+
+
+class UploadURLPool(Generic[UI]):
+    """A pool of upload URLs that handles caching, expiration, and concurrent access.
+
+    Parameters
+    ----------
+    factory: Callable[[:class:`str`], Awaitable[UI]]
+        An async callable that takes a key (bucket ID or file ID) and returns a new upload info.
+    label: :class:`str`
+        A human-readable label for log messages (e.g. ``"bucket ID"``).
+    """
+
+    __slots__ = ('_urls', '_factory', '_label')
+
+    def __init__(self, factory: Callable[[str], Awaitable[UI]], label: str) -> None:
+        self._urls: DefaultDict[str, List[UI]] = defaultdict(list)
+        self._factory = factory
+        self._label = label
+
+    def purge_expired(self, key: str) -> None:
+        old = self._urls[key]
+        new = self._urls[key] = [x for x in old if x.expires > datetime.datetime.now()]
+        if len(old) > len(new):
+            log.debug('Purged %s expired upload URLs for %s %s', len(old) - len(new), self._label, key)
+
+    def remove(self, key: str, info: UI) -> None:
+        self._urls[key].remove(info)
+        log.debug('Removed an expired/invalid upload URL for %s %s', self._label, key)
+
+    async def find(self, key: str) -> UI:
+        self.purge_expired(key)
+        infos = self._urls[key]
+
+        if not infos or all(x.in_use for x in infos):
+            if not infos:
+                log.debug('No existing upload URLs found for %s %s, creating a new one', self._label, key)
+            else:
+                log.debug('All existing upload URLs for %s %s are in-use, creating a new one', self._label, key)
+            info = await self._factory(key)
+            self._urls[key].append(info)
+        else:
+            log.debug('Using existing upload URL for %s %s', self._label, key)
+            info = next(x for x in infos if not x.in_use)
+
+        return info
+
+
 class Route:
     """A helper class for instantiating a HTTP method to Backblaze
 
@@ -171,7 +223,9 @@ class Route:
         This is a special cased kwargs. Anything passed to these will substitute it's key to value in the `path`.
     """
 
-    BASE: str = 'https://api.backblazeb2.com/b2api/v1'
+    __slots__ = ('method', 'path', 'parameters', 'url')
+
+    BASE: str = 'https://api.backblazeb2.com/b2api/v2'
 
     def __init__(
         self,
@@ -194,6 +248,10 @@ class Route:
         return f'{self.method} {str(self.url)}'
 
 
+def _filter_none(d: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: v for k, v in d.items() if v is not None}
+
+
 async def json_or_bytes(response: aiohttp.ClientResponse, route: Route) -> Union[Dict[str, Any], bytes]:
     if response.headers['Content-Type'].lower() in ('application/json;charset=utf-8', 'application/json'):
         return await response.json()
@@ -202,6 +260,24 @@ async def json_or_bytes(response: aiohttp.ClientResponse, route: Route) -> Union
 
 
 class HTTPClient:
+    __slots__ = (
+        '_application_key_id',
+        '_application_key',
+        '_session',
+        '_account_id',
+        '_authorization_token',
+        '_allowed',
+        '_api_url',
+        '_download_url',
+        '_recommended_part_size',
+        '_absolute_minimum_part_size',
+        '_s3_api',
+        '_upload_pool',
+        '_upload_part_pool',
+        '_authorization_lock',
+        'user_agent',
+    )
+
     def __init__(
         self,
         application_key_id: str,
@@ -221,8 +297,8 @@ class HTTPClient:
         self._absolute_minimum_part_size: int = MISSING
         self._s3_api: str = MISSING
 
-        self._upload_urls: DefaultDict[str, List[BucketUploadInfo]] = defaultdict(list)
-        self._upload_part_urls: DefaultDict[str, List[LargeFileUploadInfo]] = defaultdict(list)
+        self._upload_pool: UploadURLPool[BucketUploadInfo] = UploadURLPool(self._get_upload_url, 'bucket ID')
+        self._upload_part_pool: UploadURLPool[LargeFileUploadInfo] = UploadURLPool(self._get_upload_part_url, 'large file ID')
 
         # set upon account authorization
         self._authorization_lock: asyncio.Lock = asyncio.Lock()
@@ -408,157 +484,117 @@ class HTTPClient:
             route = Route(route.method, route.path, base=self._api_url, **route.parameters)
 
         for tries in range(5):
-            if upload_info:
-                upload_info.in_use = True
+            try:
+                if upload_info:
+                    upload_info.in_use = True
 
-            async with self._session.request(route.method, route.url, headers=headers, **kwargs) as response:
+                async with self._session.request(route.method, route.url, headers=headers, **kwargs) as response:
+                    if uploading_file:
+                        log.debug(
+                            '%s %s with a payload of %s bytes has returned %s',
+                            route.method,
+                            route.url,
+                            len(kwargs['data']),
+                            response.status
+                        )
+                    else:
+                        log.debug('%s %s has returned %s', route.method, route.url, response.status)
+
+                    data = await json_or_bytes(response, route)
+
+                    if 300 > response.status >= 200:
+                        # for download_file_by_x; the headers contain info about the files
+                        if isinstance(data, bytes):
+                            return data, response.headers
+                        return data
+
+                    # appease type checker; json_or_bytes will
+                    # only return bytes if response.ok which'll
+                    # be handled in the `if` statement above
+                    assert isinstance(data, dict)
+
+                    # we are being rate limited
+                    if response.status == 429:
+                        retry_after = int(response.headers.get('Retry-After', 1 + tries * 2))
+                        log.warning(
+                            '%s %s returned 429 (rate limited), sleeping for %ss',
+                            route.method,
+                            route.url,
+                            retry_after
+                        )
+                        await asyncio.sleep(retry_after)
+                        continue
+
+                    if response.status in {408, 500}:
+                        log.warning(
+                            '%s %s returned %s (%s), sleeping for %s',
+                            route.method,
+                            route.url,
+                            response.status,
+                            data['code'],
+                            1 + tries * 2
+                        )
+                        await asyncio.sleep(1 + tries * 2)
+                        continue
+
+                    # Backblaze recommends calling b2_get_upload_(part_)url again with 503s
+                    if response.status == 401 or (response.status == 503 and uploading_file):
+                        if route.path == '/b2_authorize_account':
+                            raise Unauthorized(response, data)
+
+                        if data['code'] not in (
+                            'expired_auth_token',  # auth token has expired (created over 24 hours ago)
+                            'bad_auth_token',      # auth token was not valid to begin with
+                            'service_unavailable'  # internal server error i.e. 503
+                        ):
+                            raise Unauthorized(response, data)
+
+                        if uploading_file and upload_info is not None:
+                            # we need to remove this token to prevent it from being
+                            # used again, since find_upload_(part_)url always returns
+                            # the first element found. this is only for edge-cases when
+                            # Backblaze actually invalidates the token, since aiob2 will
+                            # prevent expired tokens from being used.
+
+                            if bucket_id is not None and isinstance(upload_info, BucketUploadInfo):
+                                self._upload_pool.remove(bucket_id, upload_info)
+                                upload_info = await self._upload_pool.find(bucket_id)
+                            elif large_file_id is not None and isinstance(upload_info, LargeFileUploadInfo):
+                                self._upload_part_pool.remove(large_file_id, upload_info)
+                                upload_info = await self._upload_part_pool.find(large_file_id)
+
+                            # reset the upload URL and token and retry
+                            headers['Authorization'] = upload_info.token
+                            route = Route(
+                                route.method,
+                                route.path,
+                                base=upload_info.url,
+                                parameters=route.parameters
+                            )
+
+                            log.info('Re-authenticated upload URL and upload URL token')
+                        else:
+                            # download_by_file_x also uses the account authorization token
+                            # so we don't need a seperate elif
+                            await self._authorize_account()
+                            headers['Authorization'] = self._authorization_token
+
+                            log.info('Re-authenticated account authorization token')
+
+                        continue
+
+                    if response.status == 403:
+                        raise Forbidden(response, data)
+                    elif response.status == 404:
+                        raise NotFound(response, data)
+                    elif response.status >= 500:
+                        raise BackblazeServerError(response, data)
+                    else:
+                        raise HTTPException(response, data)
+            finally:
                 if upload_info:
                     upload_info.in_use = False
 
-                if uploading_file:
-                    log.debug(
-                        '%s %s with a payload of %s bytes has returned %s',
-                        route.method,
-                        route.url,
-                        len(kwargs['data']),
-                        response.status
-                    )
-                else:
-                    log.debug('%s %s has returned %s', route.method, route.url, response.status)
-
-                data = await json_or_bytes(response, route)
-
-                if 300 > response.status >= 200:
-                    # for download_file_by_x; the headers contain info about the files
-                    if isinstance(data, bytes):
-                        return data, response.headers
-                    return data
-
-                # appease type checker; json_or_bytes will
-                # only return bytes if response.ok which'll
-                # be handled in the `if` statement above
-                assert isinstance(data, dict)
-
-                # we are being rate limited
-                if response.status == 429:
-                    raise RateLimited(response, data)
-
-                if response.status in {408, 500}:
-                    log.warning(
-                        '%s %s returned %s (%s), sleeping for %s',
-                        route.method,
-                        route.url,
-                        response.status,
-                        data['code'],
-                        1 + tries * 2
-                    )
-                    await asyncio.sleep(1 + tries * 2)
-                    continue
-
-                # Backblaze recommends calling b2_get_upload_(part_)url again with 503s
-                if response.status == 401 or (response.status == 503 and uploading_file):
-                    if route.path == '/b2_authorize_account':
-                        raise Unauthorized(response, data)
-
-                    if data['code'] not in (
-                        'expired_auth_token',  # auth token has expired (created over 24 hours ago)
-                        'bad_auth_token',      # auth token was not valid to begin with
-                        'service_unavailable'  # internal server error i.e. 503
-                    ):
-                        raise Unauthorized(response, data)
-
-                    if uploading_file and upload_info is not None:
-                        # we need to remove this token to prevent it from being
-                        # used again, since find_upload_(part_)url always returns
-                        # the first element found. this is only for edge-cases when
-                        # Backblaze actually invalidates the token, since aiob2 will
-                        # prevent expired tokens from being used.
-
-                        if bucket_id is not None and isinstance(upload_info, BucketUploadInfo):
-                            self._upload_urls[bucket_id].remove(upload_info)
-                            log.debug('Removed an expired/invalid upload URL for bucket ID %s', bucket_id)
-
-                            upload_info = await self._find_upload_url(bucket_id)
-                        elif large_file_id is not None and isinstance(upload_info, LargeFileUploadInfo):
-                            self._upload_part_urls[large_file_id].remove(upload_info)
-                            log.debug('Removed an expired/invalid upload URL for large file ID %s', large_file_id)
-
-                            upload_info = await self._find_upload_part_url(large_file_id)
-
-                        # reset the upload URL and token and retry
-                        headers['Authorization'] = upload_info.token
-                        route = Route(
-                            route.method,
-                            route.path,
-                            base=upload_info.url,
-                            parameters=route.parameters
-                        )
-
-                        log.info('Re-authenticated upload URL and upload URL token')
-                    else:
-                        # download_by_file_x also uses the account authorization token
-                        # so we don't need a seperate elif
-                        await self._authorize_account()
-                        headers['Authorization'] = self._authorization_token
-
-                        log.info('Re-authenticated account authorization token')
-
-                    continue
-
-                if response.status == 403:
-                    raise Forbidden(response, data)
-                elif response.status == 404:
-                    raise NotFound(response, data)
-                elif response.status >= 500:
-                    raise BackblazeServerError(response, data)
-                else:
-                    raise HTTPException(response, data)
-
-    def _purge_expired_upload_urls(self, bucket_id: str) -> None:
-        old = self._upload_urls[bucket_id]
-        new = self._upload_urls[bucket_id] = list(filter(
-            lambda x: x.expires > datetime.datetime.now(),
-            self._upload_urls[bucket_id]
-        ))
-
-        if len(old) > len(new):
-            log.debug('Purged %s expired upload URLs for bucket ID %s', len(old) - len(new), bucket_id)
-
-    async def _find_upload_url(self, bucket_id: str) -> BucketUploadInfo:
-        """Attempts to find an existing non-expired, not-in-use upload URL for a bucket, otherwise it'll fetch a new one.
-
-        Note
-        ~~~~
-            This will also purge all the expired upload URLs from `self._upload_urls[bucket_id]` and append the newly-created
-            one if applicable.
-
-        Parameters
-        ----------
-        bucket_id: str
-            The bucket_id to find/create an upload URL for.
-
-        Returns
-        -------
-        :class:`BucketUploadInfo`
-            The resolved bucket upload info, or the newly-created one.
-        """
-        self._purge_expired_upload_urls(bucket_id)
-        upload_infos = self._upload_urls[bucket_id]
-
-        if not upload_infos:
-            log.debug('No existing upload URLs found for bucket ID %s, creating a new one', bucket_id)
-            upload_info = await self._get_upload_url(bucket_id)
-            self._upload_urls[bucket_id].append(upload_info)
-        else:
-            if all(x.in_use for x in upload_infos):
-                log.debug('All existing upload URLs for bucket ID %s are in-use, creating a new one', bucket_id)
-                upload_info = await self._get_upload_url(bucket_id)
-                self._upload_urls[bucket_id].append(upload_info)
-            else:
-                log.debug('Using existing upload URL for bucket ID %s', bucket_id)
-                upload_info = list(filter(lambda x: not x.in_use, upload_infos))[0]
-
-        return upload_info
 
     async def upload_file(
         self,
@@ -575,7 +611,7 @@ class HTTPClient:
         upload_timestamp: Optional[datetime.datetime],
         server_side_encryption: Optional[Literal['AES256']]
     ) -> UploadPayload:
-        upload_info = await self._find_upload_url(bucket_id)
+        upload_info = await self._upload_pool.find(bucket_id)
 
         headers = handle_upload_file_headers(
             file_name,
@@ -594,56 +630,6 @@ class HTTPClient:
         route = Route('POST', '', base=upload_info.url)
         return await self.request(route, bucket_id=bucket_id, upload_info=upload_info, headers=headers, data=content_bytes)
 
-    def _purge_expired_upload_part_urls(self, large_file_id: str) -> None:
-        old = self._upload_part_urls[large_file_id]
-        new = self._upload_part_urls[large_file_id] = list(filter(
-            lambda x: x.expires > datetime.datetime.now(),
-            self._upload_part_urls[large_file_id]
-        ))
-
-        if len(old) > len(new):
-            log.debug('Purged %s expired upload URLs for large file ID %s', len(old) - len(new), large_file_id)
-
-    async def _find_upload_part_url(self, large_file_id: str) -> LargeFileUploadInfo:
-        """Attempts to find an existing non-expired, not-in-use large upload URL for a bucket, otherwise it'll fetch a new
-        one.
-
-        Note
-        ~~~~
-            This will also purge all the expired large upload URLs from `self._upload_urls[bucket_id]` and append the
-            newly-created one if applicable.
-
-        Parameters
-        ----------
-        bucket_id: str
-            The bucket_id to find/create a large upload URL for.
-
-        Returns
-        -------
-        :class:`LargeFileUploadInfo`
-            The resolved bucket upload info, or the newly-created one.
-        """
-        self._purge_expired_upload_part_urls(large_file_id)
-        upload_part_infos = self._upload_part_urls.get(large_file_id)
-
-        # remember, upload_part_infos could also be []
-        if not upload_part_infos:
-            log.debug('No existing upload URLs found for large file ID %s, creating a new one', large_file_id)
-            upload_part_info = await self._get_upload_part_url(large_file_id)
-            self._upload_part_urls[large_file_id].append(upload_part_info)
-        else:
-            self._purge_expired_upload_part_urls(large_file_id)
-
-            if all(x.in_use for x in upload_part_infos):
-                log.debug('All existing upload URLs for large file ID %s are in-use, creating a new one', large_file_id)
-                upload_part_info = await self._get_upload_part_url(large_file_id)
-                self._upload_part_urls[large_file_id].append(upload_part_info)
-            else:
-                log.debug('Using existing upload URL for large file ID %s', large_file_id)
-                upload_part_info = list(filter(lambda x: not x.in_use, upload_part_infos))[0]
-
-        return upload_part_info
-
     async def upload_part(
         self,
         file_id: str,
@@ -654,7 +640,7 @@ class HTTPClient:
         upload_info: UploadInfo | None = None
     ) -> LargeFilePartPayload:
         if upload_info is None:
-            upload_info = await self._find_upload_part_url(file_id)
+            upload_info = await self._upload_part_pool.find(file_id)
 
         content_length = len(content_bytes)
         if content_length > self._recommended_part_size:
@@ -721,12 +707,11 @@ class HTTPClient:
         content_type: Optional[str] = None,
         server_side_encryption: Optional[str] = None
     ) -> Response[Tuple[bytes, Dict[str, Any]]]:
-        headers = {
+        headers = _filter_none({
             'Authorization': self._authorization_token,
             'Range': range_,
-        }
-        headers = {key: value for key, value in headers.items() if value is not None}
-        query_parameters = {
+        })
+        query_parameters = _filter_none({
             'b2ContentDisposition': content_disposition,
             'b2ContentLanguage': content_language,
             'b2Expires': expires,
@@ -734,14 +719,13 @@ class HTTPClient:
             'b2ContentEncoding': content_encoding,
             'b2ContentType': content_type,
             'serverSideEncryption': server_side_encryption
-        }
-        query_parameters = {key: value for key, value in query_parameters.items() if value is not None}
+        })
         params = {
             'fileId': file_id
         }
         route = Route(
             'GET',
-            '/b2api/v1/b2_download_file_by_id',
+            '/b2api/v2/b2_download_file_by_id',
             base=self._download_url,
             query_parameters=query_parameters,
         )
@@ -762,12 +746,11 @@ class HTTPClient:
         content_type: Optional[str] = None,
         server_side_encryption: Optional[str] = None
     ) -> Response[Tuple[bytes, Dict[str, Any]]]:
-        headers = {
+        headers = _filter_none({
             'Authorization': self._authorization_token,
             'Range': range_,
-        }
-        headers = {key: value for key, value in headers.items() if value is not None}
-        query_parameters = {
+        })
+        query_parameters = _filter_none({
             'b2ContentDisposition': content_disposition,
             'b2ContentLanguage': content_language,
             'b2Expires': expires,
@@ -775,8 +758,7 @@ class HTTPClient:
             'b2ContentEncoding': content_encoding,
             'b2ContentType': content_type,
             'serverSideEncryption': server_side_encryption
-        }
-        query_parameters = {key: value for key, value in query_parameters.items() if value is not None}
+        })
         route = Route(
             'GET',
             '/file/{bucket_name}/{file_name}',

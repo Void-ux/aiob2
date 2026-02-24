@@ -121,7 +121,7 @@ class LargeFile(PartialFile):
             queue.put_nowait(i)
 
         async def worker(worker_num: int):
-            upload_url = await self._http._get_upload_part_url(self.id)  # pyright: ignore[reportPrivateUsage]
+            upload_url = await self._http._upload_part_pool.find(self.id)  # pyright: ignore[reportPrivateUsage]
             while True:
                 try:
                     segment = queue.get_nowait()
