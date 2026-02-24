@@ -31,13 +31,12 @@ from yarl import URL
 from .errors import BackblazeServerError, Forbidden, HTTPException, NotFound, RateLimited, Unauthorized
 from .models.account import AccountAuthorizationPayload, Permissions
 from .models.file import LargeFilePartPayload, PartialFilePayload, UploadPayload
-from .models.bucket import ListBucketPayload
 from .utils import MISSING
 
 if TYPE_CHECKING:
     from typing_extensions import Self
     from types import TracebackType
-    from .models.bucket import BucketType
+    from .models.bucket import BucketType, ListBucketPayload
 
     BE = TypeVar('BE', bound=BaseException)
     T = TypeVar('T')
@@ -94,8 +93,8 @@ def handle_upload_file_headers(
         headers['X-Bz-Info-b2-content-encoding'] = quote(', '.join(content_encoding))
 
     if comments is not None:
-        key, value = list(comments.items())[0]
-        headers[f'X-Bz-Info-{quote_plus(key)}'] = quote(value.encode('utf-8'))
+        for key, value in comments.items():
+            headers[f'X-Bz-Info-{quote_plus(key)}'] = quote(value.encode('utf-8'))
 
     if upload_timestamp is not None:
         if datetime.datetime.now() < upload_timestamp:
@@ -329,8 +328,6 @@ class HTTPClient:
         }
 
         if upload_timestamp:
-            assert datetime.datetime.now() >= upload_timestamp, 'Future dates for upload timestamps are not supported'
-
             timestamp = int(upload_timestamp.timestamp() * 1000)
             assert timestamp.bit_length() <= 64, \
                 'The upload timestamp must be 64 bits when turned into a UNIX timestamp in milliseconds'
@@ -338,14 +335,6 @@ class HTTPClient:
             headers['X-Bz-Custom-Upload-Timestamp'] = str(timestamp)
         if comments:
             data['fileInfo'] = comments
-
-        # Backblaze allows future dates for some accounts,
-        # so pre-checking it isn't viable
-        if upload_timestamp:
-            timestamp = int(upload_timestamp.timestamp() * 1000)
-            assert timestamp.bit_length() <= 64, \
-                'The upload timestamp must be 64 bits when turned into a UNIX timestamp in milliseconds.'
-            data['X-Bz-Custom-Upload-Timestamp'] = str(timestamp)
 
         route = Route('POST', '/b2api/v2/b2_start_large_file', base=self._api_url)
         return await self.request(route, json=data, headers=headers)
@@ -486,16 +475,12 @@ class HTTPClient:
                         # prevent expired tokens from being used.
 
                         if bucket_id is not None and isinstance(upload_info, BucketUploadInfo):
-                            old_upload_info = \
-                                [i for i in self._upload_urls[bucket_id] if i.token == headers['Authorization']]
                             self._upload_urls[bucket_id].remove(upload_info)
                             log.debug('Removed an expired/invalid upload URL for bucket ID %s', bucket_id)
 
                             upload_info = await self._find_upload_url(bucket_id)
                         elif large_file_id is not None and isinstance(upload_info, LargeFileUploadInfo):
-                            old_upload_info = \
-                                [i for i in self._upload_part_urls[large_file_id] if i.token == headers['Authorization']]
-                            self._upload_part_urls[large_file_id].remove(old_upload_info[0])
+                            self._upload_part_urls[large_file_id].remove(upload_info)
                             log.debug('Removed an expired/invalid upload URL for large file ID %s', large_file_id)
 
                             upload_info = await self._find_upload_part_url(large_file_id)
@@ -810,6 +795,9 @@ class HTTPClient:
         name: str | None = None,
         types: List[BucketType] | None = None
     ) -> Response[ListBucketPayload]:
+        headers = {
+            'Authorization': self._authorization_token
+        }
         data: Dict[str, Any] = {'accountId': self._account_id}
         if id is not None:
             data['id'] = id
@@ -818,10 +806,13 @@ class HTTPClient:
         if types is not None:
             data['types'] = types
 
-        route = Route('GET', '/b2api/v2/b2_list_buckets')
-        return self.request(route, data=data)
+        route = Route('GET', '/b2api/v2/b2_list_buckets', base=self._api_url)
+        return self.request(route, headers=headers, json=data)
 
     def delete_bucket(self, bucket_id: str) -> Response[None]:
-        route = Route('POST', '/b2api/v2/b2_delete_bucket')
-        return self.request(route, data={'accountId': self._account_id, 'bucketId': bucket_id})
+        headers = {
+            'Authorization': self._authorization_token
+        }
+        route = Route('POST', '/b2api/v2/b2_delete_bucket', base=self._api_url)
+        return self.request(route, headers=headers, json={'accountId': self._account_id, 'bucketId': bucket_id})
 
