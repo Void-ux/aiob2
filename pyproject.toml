@@ -1,45 +1,46 @@
-[tool.poetry]
+[project]
 name = "aiob2"
 version = "0.9.1"
 description = "A simple and easy to use async wrapper for Backblaze's B2 bucket API."
 license = "MIT"
-authors = ["Dan <the.void.altacc@gmail.com>"]
-
+authors = [{ name = "Dan", email = "the.void.altacc@gmail.com" }]
 readme = "README.md"
-repository = "https://github.com/Void-ux/aiob2"
-documentation = "https://aiob2.readthedocs.io/en/latest/"
+requires-python = ">=3.9"
 keywords = ["backblaze", "b2", "cloud", "storage"]
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Intended Audience :: Developers",
     "Natural Language :: English",
     "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
 ]
+dependencies = [
+    "aiohttp>=3.8.1,<4",
+    "typing-extensions>=4.4.0,<5",
+    "aiofiles>=24.1.0,<25",
+]
 
-[tool.poetry.urls]
-"Bug Tracker" = "https://github.com/Void-ux/aiob2/issues/"
-
-[tool.poetry.dependencies]
-python = "^3.8"
-aiohttp = "^3.8.1"
-typing-extensions = "^4.4.0"
-aiofiles = "^24.1.0"
-
-[tool.poetry.extras]
+[project.optional-dependencies]
 speed = ["orjson"]
 
-[tool.poetry.dev-dependencies]
-pytest-asyncio = "^0.19.0"
-furo = "^2022.12.7"
-sphinxcontrib-trio = "^1.1.2"
-pytest-order = "^1.0.1"
+[project.urls]
+Repository = "https://github.com/Void-ux/aiob2"
+Documentation = "https://aiob2.readthedocs.io/en/latest/"
+"Bug Tracker" = "https://github.com/Void-ux/aiob2/issues/"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio>=0.19.0,<1",
+    "pytest-order>=1.0.1,<2",
+    "furo>=2022.12.7",
+    "sphinxcontrib-trio>=1.1.2,<2",
+]
 
 [tool.pyright]
 typeCheckingVersion = "strict"
-pythonVersion = "3.8"
+pythonVersion = "3.9"
 reportUnusedImport = "warning"
 reportUnnecessaryTypeIgnoreComment = "warning"
 reportIncompatibleMethodOverride = "warning"
@@ -48,5 +49,5 @@ reportIncompatibleMethodOverride = "warning"
 asyncio_mode = "strict"
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
