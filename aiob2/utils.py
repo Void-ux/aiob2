@@ -32,7 +32,7 @@ def format_timestamp(timestamp: float) -> datetime.datetime:
     # shifts the decimal point 3 digits to the left
     timestamp /= 1000.
 
-    return datetime.datetime.utcfromtimestamp(timestamp)
+    return datetime.datetime.fromtimestamp(timestamp, tz=datetime.timezone.utc)
 
 
 class _MissingSentinel:
