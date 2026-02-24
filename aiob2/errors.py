@@ -27,7 +27,7 @@ class HTTPException(BackblazeException):
     status: :class:`int`
         The code code of the HTTP request.
     text: :class:`str`
-        The Spotify specific error code for the failure.
+        The Backblaze specific error code for the failure.
     """
     def __init__(self, response: ClientResponse, message: Dict[str, Any]):
         self.response: ClientResponse = response
@@ -76,7 +76,7 @@ class NotFound(HTTPException):
     pass
 
 
-class BackblazeServerError(Exception):
+class BackblazeServerError(HTTPException):
     """Exception that's raised for when a 500 range status code occurs.
 
     Subclass of :exc:`HTTPException`.
